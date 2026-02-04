@@ -60,6 +60,7 @@ export const StoragePage: React.FC = () => {
 
   const buildConfigPayload = (data: AppSettings) => {
     const { r2Config, ...rest } = data;
+    void r2Config;
     return rest;
   };
 
