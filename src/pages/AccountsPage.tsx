@@ -7,9 +7,11 @@ import { Select } from '../components/ui/Select';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
 import { Plus, Trash2, Edit2, CreditCard } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
+import { useI18n } from '../i18n';
 
 export const AccountsPage: React.FC = () => {
   const { accounts, dispatch } = useAppContext();
+  const { t } = useI18n();
   const [editingAccount, setEditingAccount] = useState<Account | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
 
@@ -22,13 +24,15 @@ export const AccountsPage: React.FC = () => {
   });
 
   const accountTypes = [
-    { value: 'cash', label: 'Cash' },
-    { value: 'bank', label: 'Bank Card' },
-    { value: 'wechat', label: 'WeChat' },
-    { value: 'alipay', label: 'Alipay' },
-    { value: 'securities', label: 'Securities' },
-    { value: 'other', label: 'Other' },
+    { value: 'cash', label: t('accounts.type.cash') },
+    { value: 'bank', label: t('accounts.type.bank') },
+    { value: 'wechat', label: t('accounts.type.wechat') },
+    { value: 'alipay', label: t('accounts.type.alipay') },
+    { value: 'securities', label: t('accounts.type.securities') },
+    { value: 'other', label: t('accounts.type.other') },
   ];
+
+  const typeLabelMap = new Map(accountTypes.map(t => [t.value, t.label]));
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -64,7 +68,7 @@ export const AccountsPage: React.FC = () => {
   };
 
   const handleDelete = (id: string) => {
-    if (confirm('Are you sure you want to delete this account?')) {
+    if (confirm(t('accounts.deleteConfirm'))) {
       dispatch({ type: 'DELETE_ACCOUNT', payload: id });
     }
   };
@@ -72,41 +76,41 @@ export const AccountsPage: React.FC = () => {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold">Accounts</h1>
+        <h1 className="text-2xl font-bold">{t('page.accounts')}</h1>
         <Button onClick={() => { resetForm(); setIsFormOpen(true); }}>
-          <Plus className="mr-2 h-4 w-4" /> Add Account
+          <Plus className="mr-2 h-4 w-4" /> {t('accounts.add')}
         </Button>
       </div>
 
       {isFormOpen && (
         <Card>
           <CardHeader>
-            <CardTitle>{editingAccount ? 'Edit Account' : 'New Account'}</CardTitle>
+            <CardTitle>{editingAccount ? t('accounts.edit') : t('accounts.new')}</CardTitle>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
               <Input
-                label="Name"
+                label={t('accounts.name')}
                 value={formData.name}
                 onChange={e => setFormData({ ...formData, name: e.target.value })}
                 required
               />
               
               <Select
-                label="Type"
+                label={t('accounts.type')}
                 value={formData.type}
-                onChange={e => setFormData({ ...formData, type: e.target.value as any })}
+                onChange={e => setFormData({ ...formData, type: e.target.value as Account['type'] })}
                 options={accountTypes}
               />
               
               <div className="grid grid-cols-2 gap-4">
                 <Input
-                  label="Currency"
+                  label={t('accounts.currency')}
                   value={formData.currency}
                   onChange={e => setFormData({ ...formData, currency: e.target.value.toUpperCase() })}
                 />
                 <Input
-                  label="Balance"
+                  label={t('accounts.balance')}
                   type="number"
                   step="0.01"
                   value={formData.balance}
@@ -122,12 +126,12 @@ export const AccountsPage: React.FC = () => {
                   onChange={e => setFormData({ ...formData, isMain: e.target.checked })}
                   className="rounded border-gray-300 text-green-600 focus:ring-green-600"
                 />
-                <label htmlFor="isMain" className="text-sm font-medium text-gray-700">Set as Main Account</label>
+                <label htmlFor="isMain" className="text-sm font-medium text-gray-700">{t('accounts.setMain')}</label>
               </div>
 
               <div className="flex space-x-2 justify-end">
-                <Button type="button" variant="ghost" onClick={resetForm}>Cancel</Button>
-                <Button type="submit">Save</Button>
+                <Button type="button" variant="ghost" onClick={resetForm}>{t('common.cancel')}</Button>
+                <Button type="submit">{t('common.save')}</Button>
               </div>
             </form>
           </CardContent>
@@ -138,7 +142,7 @@ export const AccountsPage: React.FC = () => {
         {accounts.map(account => (
           <div key={account.id} className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm relative overflow-hidden">
              {account.isMain && (
-               <div className="absolute top-0 right-0 bg-green-100 text-green-800 text-xs px-2 py-1 rounded-bl-lg font-medium">Main</div>
+               <div className="absolute top-0 right-0 bg-green-100 text-green-800 text-xs px-2 py-1 rounded-bl-lg font-medium">{t('accounts.main')}</div>
              )}
             <div className="flex justify-between items-start mb-2">
               <div className="flex items-center space-x-3">
@@ -147,7 +151,7 @@ export const AccountsPage: React.FC = () => {
                 </div>
                 <div>
                   <h3 className="font-semibold">{account.name}</h3>
-                  <p className="text-xs text-gray-500 capitalize">{account.type}</p>
+                  <p className="text-xs text-gray-500 capitalize">{typeLabelMap.get(account.type) || account.type}</p>
                 </div>
               </div>
               <div className="flex space-x-1">

@@ -1,15 +1,18 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { Home, PieChart, Wallet, BarChart2, HardDrive } from 'lucide-react';
+import { Home, PieChart, Wallet, BarChart2, HardDrive, List } from 'lucide-react';
 import { clsx } from 'clsx';
+import { useI18n } from '../../i18n';
 
 export const BottomNavigation: React.FC = () => {
+  const { t } = useI18n();
   const navItems = [
-    { to: '/', icon: Home, label: 'Accounting' },
-    { to: '/categories', icon: PieChart, label: 'Categories' },
-    { to: '/accounts', icon: Wallet, label: 'Accounts' },
-    { to: '/statistics', icon: BarChart2, label: 'Stats' },
-    { to: '/storage', icon: HardDrive, label: 'Storage' },
+    { to: '/', icon: Home, label: t('nav.accounting') },
+    { to: '/records', icon: List, label: t('nav.records') },
+    { to: '/categories', icon: PieChart, label: t('nav.categories') },
+    { to: '/accounts', icon: Wallet, label: t('nav.accounts') },
+    { to: '/statistics', icon: BarChart2, label: t('nav.statistics') },
+    { to: '/storage', icon: HardDrive, label: t('nav.storage') },
   ];
 
   return (

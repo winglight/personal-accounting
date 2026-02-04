@@ -1,7 +1,9 @@
-import React, { createContext, useContext, useEffect, useReducer } from 'react';
+import React, { createContext, useContext, useEffect, useReducer, useRef } from 'react';
 import { 
   Category, Account, Transaction, ExchangeRate, AppSettings, LocalStorageData 
 } from '../types';
+import { R2SyncManager } from '../utils/r2Sync';
+import { getDefaultTemplates } from '../utils/promptTemplates';
 
 // Initial Data
 const defaultCategories: Category[] = [
@@ -24,8 +26,22 @@ const defaultAccounts: Account[] = [
 ];
 
 const defaultSettings: AppSettings = {
-  aiAccounting: false,
+  language: 'zh',
+  aiConfig: {
+    enabled: false,
+    baseUrl: 'http://localhost:8000',
+    token: '',
+    stream: true,
+    logImageMode: 'metadata',
+    templates: getDefaultTemplates(),
+  },
   mainCurrency: 'CNY',
+  r2Config: {
+    enabled: false,
+    app: '',
+    url: '',
+    token: '',
+  },
 };
 
 const initialState: LocalStorageData = {
@@ -35,6 +51,74 @@ const initialState: LocalStorageData = {
   exchangeRates: [],
   settings: defaultSettings,
   lastUpdated: new Date().toISOString(),
+};
+
+type UnknownRecord = Record<string, unknown>;
+
+const isRecord = (value: unknown): value is UnknownRecord => typeof value === 'object' && value !== null;
+
+const migrateSettings = (settings: unknown): AppSettings => {
+  const base = isRecord(settings) ? settings : {};
+  const aiConfigInput = isRecord(base.aiConfig) ? base.aiConfig : {};
+  const templateInput = isRecord(aiConfigInput.templates) ? aiConfigInput.templates : {};
+
+  const templates = typeof templateInput.text === 'string' && typeof templateInput.image === 'string'
+    ? { text: templateInput.text, image: templateInput.image }
+    : getDefaultTemplates();
+
+  const logImageMode: AppSettings['aiConfig']['logImageMode'] = aiConfigInput.logImageMode === 'full'
+    ? 'full'
+    : 'metadata';
+
+  const aiConfig: AppSettings['aiConfig'] = isRecord(base.aiConfig) ? {
+    enabled: Boolean(aiConfigInput.enabled),
+    baseUrl: typeof aiConfigInput.baseUrl === 'string' ? aiConfigInput.baseUrl : 'http://localhost:8000',
+    token: typeof aiConfigInput.token === 'string' ? aiConfigInput.token : '',
+    model: typeof aiConfigInput.model === 'string' ? aiConfigInput.model : undefined,
+    stream: true as const,
+    logImageMode,
+    templates,
+  } : {
+    enabled: Boolean(base.aiAccounting),
+    baseUrl: 'http://localhost:8000',
+    token: typeof base.geminiToken === 'string' ? base.geminiToken : '',
+    stream: true as const,
+    logImageMode: 'metadata' as const,
+    templates,
+  };
+
+  const r2Input = isRecord(base.r2Config) ? base.r2Config : undefined;
+  const r2Config = r2Input && typeof r2Input.url === 'string' ? {
+    enabled: Boolean(r2Input.enabled),
+    app: typeof r2Input.app === 'string' ? r2Input.app : '',
+    url: r2Input.url,
+    token: typeof r2Input.token === 'string' ? r2Input.token : '',
+  } : {
+    enabled: false,
+    app: '',
+    url: '',
+    token: '',
+  };
+
+  return {
+    language: base.language === 'en' ? 'en' : 'zh',
+    aiConfig,
+    mainCurrency: typeof base.mainCurrency === 'string' ? base.mainCurrency : 'CNY',
+    lastSyncTime: typeof base.lastSyncTime === 'string' ? base.lastSyncTime : undefined,
+    r2Config,
+  };
+};
+
+const migrateState = (state: unknown): LocalStorageData => {
+  const base = isRecord(state) ? state : {};
+  return {
+    categories: Array.isArray(base.categories) ? (base.categories as Category[]) : defaultCategories,
+    accounts: Array.isArray(base.accounts) ? (base.accounts as Account[]) : defaultAccounts,
+    transactions: Array.isArray(base.transactions) ? (base.transactions as Transaction[]) : [],
+    exchangeRates: Array.isArray(base.exchangeRates) ? (base.exchangeRates as ExchangeRate[]) : [],
+    settings: migrateSettings(base.settings),
+    lastUpdated: typeof base.lastUpdated === 'string' ? base.lastUpdated : new Date().toISOString(),
+  };
 };
 
 // Actions
@@ -161,11 +245,69 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [state, dispatch] = useReducer(appReducer, initialState, (initial) => {
     const stored = localStorage.getItem('personal_accounting_data');
-    return stored ? JSON.parse(stored) : initial;
+    if (!stored) return initial;
+    try {
+      return migrateState(JSON.parse(stored));
+    } catch {
+      return initial;
+    }
   });
+  const initialSyncDone = useRef(false);
+  const suppressNextUpload = useRef(false);
+  const uploadTimeout = useRef<number | null>(null);
 
   useEffect(() => {
     localStorage.setItem('personal_accounting_data', JSON.stringify(state));
+  }, [state]);
+
+  useEffect(() => {
+    const config = state.settings.r2Config;
+    if (!config?.enabled || !config.url || !config.app || !config.token) {
+      initialSyncDone.current = true;
+      return;
+    }
+    initialSyncDone.current = false;
+    let cancelled = false;
+    const runSync = async () => {
+      try {
+        const remoteData = await R2SyncManager.download<LocalStorageData>(config, 'backup');
+        if (cancelled || !remoteData) return;
+        const remoteUpdated = remoteData.lastUpdated;
+        const localUpdated = state.lastUpdated;
+        if (!localUpdated || (remoteUpdated && new Date(remoteUpdated) > new Date(localUpdated))) {
+          suppressNextUpload.current = true;
+          dispatch({ type: 'SET_DATA', payload: remoteData });
+        }
+      } catch (e) {
+        console.warn('R2 initial sync failed:', e);
+      } finally {
+        if (!cancelled) initialSyncDone.current = true;
+      }
+    };
+    runSync();
+    return () => {
+      cancelled = true;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.settings.r2Config?.enabled, state.settings.r2Config?.url, state.settings.r2Config?.app, state.settings.r2Config?.token]);
+
+  useEffect(() => {
+    const config = state.settings.r2Config;
+    if (!initialSyncDone.current) return;
+    if (!config?.enabled || !config.url || !config.app || !config.token) return;
+    if (suppressNextUpload.current) {
+      suppressNextUpload.current = false;
+      return;
+    }
+    if (uploadTimeout.current) window.clearTimeout(uploadTimeout.current);
+    uploadTimeout.current = window.setTimeout(() => {
+      R2SyncManager.upload(state, config, 'backup').catch((e) => {
+        console.warn('R2 upload failed:', e);
+      });
+    }, 1200);
+    return () => {
+      if (uploadTimeout.current) window.clearTimeout(uploadTimeout.current);
+    };
   }, [state]);
 
   const importData = (data: LocalStorageData) => {

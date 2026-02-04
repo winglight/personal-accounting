@@ -7,9 +7,11 @@ import { Select } from '../components/ui/Select';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
 import { Plus, Trash2, Edit2, ChevronRight, ChevronDown } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
+import { useI18n } from '../i18n';
 
 export const CategoriesPage: React.FC = () => {
   const { categories, dispatch } = useAppContext();
+  const { t } = useI18n();
   const [activeType, setActiveType] = useState<'expense' | 'income'>('expense');
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -62,7 +64,7 @@ export const CategoriesPage: React.FC = () => {
   };
 
   const handleDelete = (id: string) => {
-    if (confirm('Are you sure you want to delete this category?')) {
+    if (confirm(t('categories.deleteConfirm'))) {
       dispatch({ type: 'DELETE_CATEGORY', payload: id });
     }
   };
@@ -70,9 +72,9 @@ export const CategoriesPage: React.FC = () => {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold">Categories</h1>
+        <h1 className="text-2xl font-bold">{t('page.categories')}</h1>
         <Button onClick={() => { resetForm(); setIsFormOpen(true); }}>
-          <Plus className="mr-2 h-4 w-4" /> Add Category
+          <Plus className="mr-2 h-4 w-4" /> {t('categories.add')}
         </Button>
       </div>
 
@@ -81,43 +83,43 @@ export const CategoriesPage: React.FC = () => {
           className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeType === 'expense' ? 'bg-green-100 text-green-700' : 'text-gray-600 hover:bg-gray-100'}`}
           onClick={() => { setActiveType('expense'); setFormData(prev => ({ ...prev, type: 'expense' })); }}
         >
-          Expense
+          {t('accounting.expense')}
         </button>
         <button
           className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeType === 'income' ? 'bg-green-100 text-green-700' : 'text-gray-600 hover:bg-gray-100'}`}
           onClick={() => { setActiveType('income'); setFormData(prev => ({ ...prev, type: 'income' })); }}
         >
-          Income
+          {t('accounting.income')}
         </button>
       </div>
 
       {isFormOpen && (
         <Card>
           <CardHeader>
-            <CardTitle>{editingCategory ? 'Edit Category' : 'New Category'}</CardTitle>
+            <CardTitle>{editingCategory ? t('categories.edit') : t('categories.new')}</CardTitle>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
               <Input
-                label="Name"
+                label={t('categories.name')}
                 value={formData.name}
                 onChange={e => setFormData({ ...formData, name: e.target.value })}
                 required
               />
               
               <Select
-                label="Parent Category (Optional)"
+                label={t('categories.parent')}
                 value={formData.parentId || ''}
                 onChange={e => setFormData({ ...formData, parentId: e.target.value })}
                 options={[
-                    { value: '', label: 'None (Top Level)' },
+                    { value: '', label: t('categories.parent.none') },
                     ...parents.filter(p => p.id !== editingCategory?.id).map(p => ({ value: p.id, label: p.name }))
                 ]}
               />
 
               <div className="flex space-x-2 justify-end">
-                <Button type="button" variant="ghost" onClick={resetForm}>Cancel</Button>
-                <Button type="submit">Save</Button>
+                <Button type="button" variant="ghost" onClick={resetForm}>{t('common.cancel')}</Button>
+                <Button type="submit">{t('common.save')}</Button>
               </div>
             </form>
           </CardContent>

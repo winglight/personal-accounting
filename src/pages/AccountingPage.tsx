@@ -8,7 +8,7 @@ import { AIChat } from '../components/accounting/AIChat';
 export const AccountingPage: React.FC = () => {
   const { settings } = useAppContext();
 
-  if (settings.aiAccounting && settings.geminiToken) {
+  if (settings.aiConfig?.enabled && settings.aiConfig?.token && settings.aiConfig?.baseUrl) {
     return <AIChat />;
   }
 

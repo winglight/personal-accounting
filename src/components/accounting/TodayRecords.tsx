@@ -2,9 +2,11 @@ import React from 'react';
 import { useAppContext } from '../../contexts/AppContext';
 import { format, isSameDay, parseISO } from 'date-fns';
 import { Trash2 } from 'lucide-react';
+import { useI18n } from '../../i18n';
 
 export const TodayRecords: React.FC = () => {
   const { transactions, categories, accounts, dispatch } = useAppContext();
+  const { t } = useI18n();
   const today = new Date();
   
   const todayTransactions = transactions.filter(t => 
@@ -20,7 +22,7 @@ export const TodayRecords: React.FC = () => {
     .reduce((sum, t) => sum + t.amount, 0);
 
   const handleDelete = (id: string) => {
-    if (confirm('Delete this record?')) {
+    if (confirm(t('today.deleteConfirm'))) {
       dispatch({ type: 'DELETE_TRANSACTION', payload: id });
     }
   };
@@ -31,16 +33,16 @@ export const TodayRecords: React.FC = () => {
   return (
     <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden h-full">
       <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
-        <h3 className="font-semibold text-gray-700">Today</h3>
+        <h3 className="font-semibold text-gray-700">{t('today.title')}</h3>
         <div className="text-sm space-x-3">
-          <span className="text-green-600">In: +{income.toFixed(2)}</span>
-          <span className="text-red-600">Out: -{expense.toFixed(2)}</span>
+          <span className="text-green-600">{t('today.in')}: +{income.toFixed(2)}</span>
+          <span className="text-red-600">{t('today.out')}: -{expense.toFixed(2)}</span>
         </div>
       </div>
       
       <div className="divide-y divide-gray-100 overflow-y-auto max-h-[500px]">
         {todayTransactions.length === 0 ? (
-          <div className="p-8 text-center text-gray-400 text-sm">No records today</div>
+          <div className="p-8 text-center text-gray-400 text-sm">{t('today.empty')}</div>
         ) : (
           todayTransactions.map(t => (
             <div key={t.id} className="p-4 flex justify-between items-center hover:bg-gray-50 group">

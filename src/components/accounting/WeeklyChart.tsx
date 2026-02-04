@@ -11,6 +11,8 @@ import {
   Legend,
 } from 'chart.js';
 import { startOfWeek, endOfWeek, eachDayOfInterval, format, isSameDay, parseISO } from 'date-fns';
+import { enUS, zhCN } from 'date-fns/locale';
+import { useI18n } from '../../i18n';
 
 ChartJS.register(
   CategoryScale,
@@ -23,17 +25,19 @@ ChartJS.register(
 
 export const WeeklyChart: React.FC = () => {
   const { transactions } = useAppContext();
+  const { t, language } = useI18n();
   const today = new Date();
   const start = startOfWeek(today, { weekStartsOn: 1 }); // Monday start
   const end = endOfWeek(today, { weekStartsOn: 1 });
   
   const days = eachDayOfInterval({ start, end });
   
+  const locale = language === 'zh' ? zhCN : enUS;
   const data = {
-    labels: days.map(d => format(d, 'EEE')), // Mon, Tue...
+    labels: days.map(d => format(d, 'EEE', { locale })), // Mon, Tue...
     datasets: [
       {
-        label: 'Income',
+        label: t('accounting.income'),
         data: days.map(day => 
           transactions
             .filter(t => isSameDay(parseISO(t.date), day) && t.type === 'income')
@@ -44,7 +48,7 @@ export const WeeklyChart: React.FC = () => {
         borderWidth: 1,
       },
       {
-        label: 'Expense',
+        label: t('accounting.expense'),
         data: days.map(day => 
           transactions
             .filter(t => isSameDay(parseISO(t.date), day) && t.type === 'expense')
@@ -74,7 +78,7 @@ export const WeeklyChart: React.FC = () => {
 
   return (
     <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm h-64">
-      <h3 className="text-sm font-semibold text-gray-700 mb-2">Weekly Overview</h3>
+      <h3 className="text-sm font-semibold text-gray-700 mb-2">{t('statistics.weekly')}</h3>
       <div className="h-48">
         <Bar data={data} options={options} />
       </div>

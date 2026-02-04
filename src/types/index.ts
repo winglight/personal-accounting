@@ -30,6 +30,14 @@ export interface Transaction {
   payer?: string;
   note?: string;
   attachments?: string[]; // 图片附件路径
+  receiptId?: string;
+  receiptItemIndex?: number;
+  receiptMeta?: {
+    merchant?: string;
+    date?: string;
+    total?: number;
+    currency?: string;
+  };
   createdAt: string;
   updatedAt: string;
 }
@@ -41,15 +49,26 @@ export interface ExchangeRate {
 }
 
 export interface AppSettings {
-  aiAccounting: boolean;
-  geminiToken?: string;
+  language: 'zh' | 'en';
+  aiConfig: {
+    enabled: boolean;
+    baseUrl: string;
+    token: string;
+    model?: string;
+    stream: true;
+    logImageMode: 'metadata' | 'full';
+    templates: {
+      text: string;
+      image: string;
+    };
+  };
   mainCurrency: string; // 主货币，默认为CNY
   lastSyncTime?: string;
   r2Config?: {
-    endpoint: string;
-    accessKeyId: string;
-    secretAccessKey: string;
-    bucket: string;
+    enabled: boolean;
+    app: string;
+    url: string;
+    token: string;
   };
 }
 
@@ -80,6 +99,6 @@ export enum ErrorType {
 export interface AppError {
   type: ErrorType;
   message: string;
-  details?: any;
+  details?: unknown;
   timestamp: string;
 }
