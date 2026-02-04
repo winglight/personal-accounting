@@ -95,6 +95,10 @@ export const AIChat: React.FC = () => {
     const maxAge = HISTORY_DAYS * 24 * 60 * 60 * 1000;
     const now = Date.now();
     const trimmed = messages.filter(m => m.createdAt && now - new Date(m.createdAt).getTime() <= maxAge);
+    if (trimmed.length !== messages.length) {
+      setMessages(trimmed);
+      return;
+    }
     localStorage.setItem(HISTORY_KEY, JSON.stringify(trimmed));
   }, [messages]);
 

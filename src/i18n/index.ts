@@ -13,6 +13,8 @@ const dictionaries: Record<Language, Dict> = {
     'nav.storage': '设置',
     'nav.records': '明细',
 
+    'app.name': 'AI随手记',
+
     'common.save': '保存',
     'common.cancel': '取消',
     'common.edit': '编辑',
@@ -149,6 +151,8 @@ const dictionaries: Record<Language, Dict> = {
     'nav.statistics': 'Stats',
     'nav.storage': 'Settings',
     'nav.records': 'Records',
+
+    'app.name': 'Personal Accounting',
 
     'common.save': 'Save',
     'common.cancel': 'Cancel',
