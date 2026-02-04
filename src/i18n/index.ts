@@ -10,7 +10,7 @@ const dictionaries: Record<Language, Dict> = {
     'nav.categories': '分类',
     'nav.accounts': '账户',
     'nav.statistics': '统计',
-    'nav.storage': '存储',
+    'nav.storage': '设置',
     'nav.records': '明细',
 
     'common.save': '保存',
@@ -27,7 +27,7 @@ const dictionaries: Record<Language, Dict> = {
     'page.categories': '分类',
     'page.accounts': '账户',
     'page.statistics': '统计',
-    'page.storage': '存储与设置',
+    'page.storage': '设置',
     'page.records': '交易明细',
 
     'settings.general': '通用设置',
@@ -147,7 +147,7 @@ const dictionaries: Record<Language, Dict> = {
     'nav.categories': 'Categories',
     'nav.accounts': 'Accounts',
     'nav.statistics': 'Stats',
-    'nav.storage': 'Storage',
+    'nav.storage': 'Settings',
     'nav.records': 'Records',
 
     'common.save': 'Save',
@@ -164,7 +164,7 @@ const dictionaries: Record<Language, Dict> = {
     'page.categories': 'Categories',
     'page.accounts': 'Accounts',
     'page.statistics': 'Statistics',
-    'page.storage': 'Storage & Settings',
+    'page.storage': 'Settings',
     'page.records': 'Transaction Records',
 
     'settings.general': 'General Settings',

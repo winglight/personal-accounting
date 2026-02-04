@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useAppContext } from '../../contexts/AppContext';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
-import { Send, Image as ImageIcon, Check, X } from 'lucide-react';
+import { Send, Image as ImageIcon, Check, X, RefreshCw } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { Transaction } from '../../types';
 import { useI18n } from '../../i18n';
@@ -44,24 +44,40 @@ interface Message {
   id: string;
   role: 'user' | 'ai';
   content: string;
+  createdAt: string;
+  imageData?: string;
   parsedText?: AIParsedText;
   parsedReceipt?: AIReceiptResult;
   status?: 'queued' | 'streaming' | 'success' | 'error';
+  retryPayload?: AIQueueItem;
 }
 
-type ImageState = {
-  file: File;
-  dataUrl: string;
-};
+const HISTORY_KEY = 'ai_chat_history';
+const HISTORY_DAYS = 3;
 
 export const AIChat: React.FC = () => {
   const { settings, categories, accounts, transactions, dispatch } = useAppContext();
   const { t } = useI18n();
-  const [messages, setMessages] = useState<Message[]>([
-    { id: '1', role: 'ai', content: t('ai.hello') }
-  ]);
+  const [messages, setMessages] = useState<Message[]>(() => {
+    const raw = localStorage.getItem(HISTORY_KEY);
+    const fallback: Message[] = [{
+      id: '1',
+      role: 'ai',
+      content: t('ai.hello'),
+      createdAt: new Date().toISOString(),
+    }];
+    if (!raw) return fallback;
+    try {
+      const parsed = JSON.parse(raw) as Message[];
+      const maxAge = HISTORY_DAYS * 24 * 60 * 60 * 1000;
+      const now = Date.now();
+      const filtered = parsed.filter(m => m.createdAt && now - new Date(m.createdAt).getTime() <= maxAge);
+      return filtered.length > 0 ? filtered : fallback;
+    } catch {
+      return fallback;
+    }
+  });
   const [input, setInput] = useState('');
-  const [selectedImage, setSelectedImage] = useState<ImageState | null>(null);
   const [loading, setLoading] = useState(false);
   const [aiOnline, setAiOnline] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -76,18 +92,30 @@ export const AIChat: React.FC = () => {
   useEffect(scrollToBottom, [messages]);
 
   useEffect(() => {
+    const maxAge = HISTORY_DAYS * 24 * 60 * 60 * 1000;
+    const now = Date.now();
+    const trimmed = messages.filter(m => m.createdAt && now - new Date(m.createdAt).getTime() <= maxAge);
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(trimmed));
+  }, [messages]);
+
+  useEffect(() => {
     const queued = getQueue();
-    if (queued.length > 0) {
-      setMessages(prev => [
-        ...prev,
-        ...queued.map(item => ({
+    if (queued.length === 0) return;
+    setMessages(prev => {
+      const existing = new Set(prev.map(m => m.id));
+      const appended = queued
+        .filter(item => !existing.has(item.id))
+        .map(item => ({
           id: item.id,
           role: 'user' as const,
           content: item.type === 'text' ? item.text || '' : t('ai.input.image'),
+          createdAt: item.createdAt,
           status: 'queued' as const,
-        })),
-      ]);
-    }
+          imageData: item.type === 'image' ? item.imageData : undefined,
+          retryPayload: item,
+        }));
+      return appended.length ? [...prev, ...appended] : prev;
+    });
   }, [t]);
 
   useEffect(() => {
@@ -176,7 +204,7 @@ export const AIChat: React.FC = () => {
     const aiMessageId = uuidv4();
     setMessages(prev => [
       ...prev,
-      { id: aiMessageId, role: 'ai', content: '', status: 'streaming' },
+      { id: aiMessageId, role: 'ai', content: '', status: 'streaming', createdAt: new Date().toISOString() },
     ]);
 
     let rawResponse = '';
@@ -225,6 +253,8 @@ export const AIChat: React.FC = () => {
         if (userMessageId) {
           setMessages(prev => prev.map(m => m.id === userMessageId ? { ...m, status: 'queued' } : m));
         }
+      } else if (userMessageId) {
+        setMessages(prev => prev.map(m => m.id === userMessageId ? { ...m, status: 'error' } : m));
       }
     }
   }, [
@@ -256,17 +286,21 @@ export const AIChat: React.FC = () => {
 
   const handleSend = async () => {
     if (!input.trim() || !settings.aiConfig?.token) return;
-    if (selectedImage) return;
     const id = uuidv4();
-    const userMsg: Message = { id, role: 'user', content: input };
-    setMessages(prev => [...prev, userMsg]);
-
     const queueItem: AIQueueItem = {
       id,
       createdAt: new Date().toISOString(),
       type: 'text',
       text: input,
     };
+    const userMsg: Message = {
+      id,
+      role: 'user',
+      content: input,
+      createdAt: queueItem.createdAt,
+      retryPayload: queueItem,
+    };
+    setMessages(prev => [...prev, userMsg]);
 
     setInput('');
     if (!aiOnline) {
@@ -282,49 +316,52 @@ export const AIChat: React.FC = () => {
     setLoading(false);
   };
 
-  const handleImageSelect = async (file: File) => {
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const base64 = reader.result as string;
-      setSelectedImage({ file, dataUrl: base64 });
-    };
-    reader.readAsDataURL(file);
-  };
-
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !settings.aiConfig?.token) return;
     if (input.trim()) return;
-    handleImageSelect(file);
+    const reader = new FileReader();
+    reader.onloadend = async () => {
+      const base64 = reader.result as string;
+      await sendImageNow(file, base64);
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
   };
 
-  const sendImage = async () => {
-    if (!selectedImage || !settings.aiConfig?.token) return;
+  const sendImageNow = async (file: File, dataUrl: string) => {
+    if (!settings.aiConfig?.token) return;
     const id = uuidv4();
-    const userMsg: Message = { id, role: 'user', content: t('ai.input.image') };
-    setMessages(prev => [...prev, userMsg]);
-
     const hash = settings.aiConfig.logImageMode === 'metadata'
-      ? await computeHash(selectedImage.dataUrl)
+      ? await computeHash(dataUrl)
       : '';
-    const contentForLog = settings.aiConfig.logImageMode === 'full'
-      ? selectedImage.dataUrl
-      : { name: selectedImage.file.name, size: selectedImage.file.size, type: selectedImage.file.type, hash };
 
     const queueItem: AIQueueItem = {
       id,
       createdAt: new Date().toISOString(),
       type: 'image',
-      imageData: selectedImage.dataUrl,
+      imageData: dataUrl,
       imageMeta: {
-        name: selectedImage.file.name,
-        size: selectedImage.file.size,
-        type: selectedImage.file.type,
+        name: file.name,
+        size: file.size,
+        type: file.type,
         hash,
       },
     };
 
-    setSelectedImage(null);
+    const userMsg: Message = {
+      id,
+      role: 'user',
+      content: t('ai.input.image'),
+      createdAt: queueItem.createdAt,
+      imageData: dataUrl,
+      retryPayload: queueItem,
+    };
+    setMessages(prev => [...prev, userMsg]);
+
+    const contentForLog = settings.aiConfig.logImageMode === 'full'
+      ? dataUrl
+      : { name: file.name, size: file.size, type: file.type, hash };
     if (!aiOnline) {
       enqueue(queueItem);
       setMessages(prev => prev.map(m => m.id === id ? { ...m, status: 'queued' } : m));
@@ -387,82 +424,110 @@ export const AIChat: React.FC = () => {
     setMessages(prev => prev.map(m => m.id === msgId ? { ...m, status: 'success', content: t('ai.saved') } : m));
   };
 
-  const isTextDisabled = Boolean(selectedImage);
   const isImageDisabled = Boolean(input.trim());
+  const handleRetry = async (message: Message) => {
+    if (!message.retryPayload) return;
+    if (!aiOnline) {
+      enqueue(message.retryPayload);
+      setMessages(prev => prev.map(m => m.id === message.id ? { ...m, status: 'queued' } : m));
+      return;
+    }
+    setMessages(prev => prev.map(m => m.id === message.id ? { ...m, status: 'streaming' } : m));
+    await sendToAI(message.retryPayload, message.id);
+  };
 
   return (
     <div className="flex flex-col h-[calc(100vh-10rem)] bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.map(msg => (
           <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-[80%] rounded-lg p-3 ${msg.role === 'user' ? 'bg-green-100 text-green-900' : 'bg-gray-100 text-gray-900'}`}>
-              <p className="whitespace-pre-wrap">{msg.content}</p>
-              {msg.status === 'streaming' && !msg.content && (
-                <div className="text-xs text-gray-500 mt-2">{t('ai.streaming')}</div>
-              )}
-              {msg.status === 'queued' && (
-                <div className="text-xs text-gray-500 mt-2">{t('ai.queued')}</div>
-              )}
-              {msg.parsedText && !msg.status && (
-                <div className="mt-3 bg-white p-2 rounded text-sm space-y-1 border border-gray-200">
-                  <p><strong>{t('accounting.type')}:</strong> {msg.parsedText.type}</p>
-                  <p><strong>{t('accounting.amount')}:</strong> {msg.parsedText.amount}</p>
-                  <p><strong>{t('accounting.date')}:</strong> {msg.parsedText.date}</p>
-                  <p><strong>{t('accounting.category')}:</strong> {msg.parsedText.category || t('common.none')}</p>
-                  <p><strong>{t('accounting.note')}:</strong> {msg.parsedText.note}</p>
-                  <div className="flex space-x-2 mt-2 pt-2 border-t border-gray-100">
-                    <button 
-                      onClick={() => handleConfirmText(msg.id, msg.parsedText!)}
-                      className="flex-1 bg-green-600 text-white py-1 px-2 rounded text-xs flex items-center justify-center"
-                    >
-                      <Check className="h-3 w-3 mr-1" /> {t('ai.confirm')}
-                    </button>
-                    <button className="flex-1 bg-gray-200 text-gray-700 py-1 px-2 rounded text-xs flex items-center justify-center">
-                      <X className="h-3 w-3 mr-1" /> {t('ai.edit')}
-                    </button>
-                  </div>
+            {msg.role === 'user' ? (
+              <div className="flex items-end gap-2">
+                <div className="max-w-[80%] rounded-lg p-3 bg-green-100 text-green-900">
+                  <p className="whitespace-pre-wrap">{msg.content}</p>
+                  {msg.imageData && (
+                    <img src={msg.imageData} alt="" className="mt-2 max-h-40 rounded border border-green-200" />
+                  )}
+                  {msg.status === 'streaming' && !msg.content && (
+                    <div className="text-xs text-gray-500 mt-2">{t('ai.streaming')}</div>
+                  )}
+                  {msg.status === 'queued' && (
+                    <div className="text-xs text-gray-500 mt-2">{t('ai.queued')}</div>
+                  )}
                 </div>
-              )}
-              {msg.parsedReceipt && !msg.status && (
-                <div className="mt-3 bg-white p-2 rounded text-sm space-y-2 border border-gray-200">
-                  <div className="text-xs text-gray-500">
-                    {msg.parsedReceipt.receipt?.merchant || ''} {msg.parsedReceipt.receipt?.date || ''}
+                {msg.status === 'error' && (
+                  <button
+                    type="button"
+                    onClick={() => handleRetry(msg)}
+                    className="h-8 w-8 rounded-full border border-gray-300 text-gray-600 hover:text-green-600 hover:border-green-400 flex items-center justify-center"
+                    aria-label="Retry"
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="max-w-[80%] rounded-lg p-3 bg-gray-100 text-gray-900">
+                <p className="whitespace-pre-wrap">{msg.content}</p>
+                {msg.status === 'streaming' && !msg.content && (
+                  <div className="text-xs text-gray-500 mt-2">{t('ai.streaming')}</div>
+                )}
+                {msg.status === 'queued' && (
+                  <div className="text-xs text-gray-500 mt-2">{t('ai.queued')}</div>
+                )}
+                {msg.parsedText && !msg.status && (
+                  <div className="mt-3 bg-white p-2 rounded text-sm space-y-1 border border-gray-200">
+                    <p><strong>{t('accounting.type')}:</strong> {msg.parsedText.type}</p>
+                    <p><strong>{t('accounting.amount')}:</strong> {msg.parsedText.amount}</p>
+                    <p><strong>{t('accounting.date')}:</strong> {msg.parsedText.date}</p>
+                    <p><strong>{t('accounting.category')}:</strong> {msg.parsedText.category || t('common.none')}</p>
+                    <p><strong>{t('accounting.note')}:</strong> {msg.parsedText.note}</p>
+                    <div className="flex space-x-2 mt-2 pt-2 border-t border-gray-100">
+                      <button 
+                        onClick={() => handleConfirmText(msg.id, msg.parsedText!)}
+                        className="flex-1 bg-green-600 text-white py-1 px-2 rounded text-xs flex items-center justify-center"
+                      >
+                        <Check className="h-3 w-3 mr-1" /> {t('ai.confirm')}
+                      </button>
+                      <button className="flex-1 bg-gray-200 text-gray-700 py-1 px-2 rounded text-xs flex items-center justify-center">
+                        <X className="h-3 w-3 mr-1" /> {t('ai.edit')}
+                      </button>
+                    </div>
                   </div>
-                  <div className="space-y-1">
-                    {(msg.parsedReceipt.items || []).map((item, idx) => (
-                      <div key={idx} className="flex justify-between text-xs">
-                        <span>{item.name || t('common.none')}</span>
-                        <span>{item.amount ?? 0}</span>
-                      </div>
-                    ))}
+                )}
+                {msg.parsedReceipt && !msg.status && (
+                  <div className="mt-3 bg-white p-2 rounded text-sm space-y-2 border border-gray-200">
+                    <div className="text-xs text-gray-500">
+                      {msg.parsedReceipt.receipt?.merchant || ''} {msg.parsedReceipt.receipt?.date || ''}
+                    </div>
+                    <div className="space-y-1">
+                      {(msg.parsedReceipt.items || []).map((item, idx) => (
+                        <div key={idx} className="flex justify-between text-xs">
+                          <span>{item.name || t('common.none')}</span>
+                          <span>{item.amount ?? 0}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex space-x-2 mt-2 pt-2 border-t border-gray-100">
+                      <button
+                        onClick={() => handleConfirmReceipt(msg.id, msg.parsedReceipt!)}
+                        className="flex-1 bg-green-600 text-white py-1 px-2 rounded text-xs flex items-center justify-center"
+                      >
+                        <Check className="h-3 w-3 mr-1" /> {t('ai.confirmAll')}
+                      </button>
+                      <button className="flex-1 bg-gray-200 text-gray-700 py-1 px-2 rounded text-xs flex items-center justify-center">
+                        <X className="h-3 w-3 mr-1" /> {t('ai.edit')}
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex space-x-2 mt-2 pt-2 border-t border-gray-100">
-                    <button
-                      onClick={() => handleConfirmReceipt(msg.id, msg.parsedReceipt!)}
-                      className="flex-1 bg-green-600 text-white py-1 px-2 rounded text-xs flex items-center justify-center"
-                    >
-                      <Check className="h-3 w-3 mr-1" /> {t('ai.confirmAll')}
-                    </button>
-                    <button className="flex-1 bg-gray-200 text-gray-700 py-1 px-2 rounded text-xs flex items-center justify-center">
-                      <X className="h-3 w-3 mr-1" /> {t('ai.edit')}
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
+                )}
+              </div>
+            )}
           </div>
         ))}
         <div ref={messagesEndRef} />
       </div>
       <div className="p-3 border-t border-gray-100 space-y-2">
-        {selectedImage && (
-          <div className="flex items-center justify-between bg-gray-50 p-2 rounded">
-            <div className="text-xs text-gray-600 truncate">{selectedImage.file.name}</div>
-            <Button type="button" size="sm" variant="ghost" onClick={() => setSelectedImage(null)}>
-              {t('ai.input.clearImage')}
-            </Button>
-          </div>
-        )}
         <div className="flex items-center space-x-2">
           <input 
               type="file" 
@@ -486,13 +551,9 @@ export const AIChat: React.FC = () => {
             onKeyDown={e => e.key === 'Enter' && handleSend()}
             placeholder={t('ai.input.placeholder')} 
             className="flex-1"
-            disabled={isTextDisabled}
           />
-          <Button onClick={handleSend} disabled={loading || !input.trim() || isTextDisabled} size="sm">
+          <Button onClick={handleSend} disabled={loading || !input.trim()} size="sm">
             <Send className="h-4 w-4" />
-          </Button>
-          <Button onClick={sendImage} disabled={loading || !selectedImage} size="sm" variant="secondary">
-            {t('ai.input.image')}
           </Button>
         </div>
         {!aiOnline && settings.aiConfig?.enabled && (

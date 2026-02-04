@@ -14,6 +14,14 @@ const buildUrl = (config: R2Config, entity: string) => {
   return `${base}/${app}/${path}.zip`;
 };
 
+const buildRawUrl = (config: R2Config, entity: string) => {
+  const base = config.url.replace(/\/+$/, '');
+  const app = config.app.replace(/^\/+|\/+$/g, '');
+  const path = entity.replace(/^\/+/, '');
+  const key = path.endsWith('.json') ? path : `${path}.json`;
+  return `${base}/${app}/${key}`;
+};
+
 export class R2SyncManager {
   private static async zipContent(content: string, filename: string): Promise<Blob> {
     const zip = new JSZip();
@@ -80,6 +88,41 @@ export class R2SyncManager {
       }
       const zipBlob = await response.blob();
       return await this.unzipFirst(zipBlob);
+    } catch (error) {
+      if (!(error instanceof Error) || !error.message.includes('404')) {
+        console.warn('R2 download failed:', error);
+      }
+      return null;
+    }
+  }
+
+  static async uploadJson<T>(data: T, config: R2Config, entity = 'config'): Promise<void> {
+    if (!config.enabled) return;
+    const payload = typeof data === 'string' ? data : JSON.stringify(data);
+    await fetch(buildRawUrl(config, entity), {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Custom-Auth-Key': config.token,
+      },
+      body: payload,
+    });
+  }
+
+  static async downloadJson<T>(config: R2Config, entity = 'config'): Promise<T | null> {
+    if (!config.enabled) return null;
+    try {
+      const response = await fetch(buildRawUrl(config, entity), {
+        headers: {
+          'X-Custom-Auth-Key': config.token,
+        },
+      });
+      if (!response.ok) {
+        if (response.status === 404) return null;
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      const content = await response.text();
+      return JSON.parse(content) as T;
     } catch (error) {
       if (!(error instanceof Error) || !error.message.includes('404')) {
         console.warn('R2 download failed:', error);

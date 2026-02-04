@@ -293,6 +293,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   useEffect(() => {
     const config = state.settings.r2Config;
+    if (!config?.enabled || !config.url || !config.app || !config.token) {
+      return;
+    }
+    let cancelled = false;
+    const syncConfig = async () => {
+      try {
+        const remoteConfig = await R2SyncManager.downloadJson<Partial<AppSettings>>(config, 'config');
+        if (cancelled || !remoteConfig) return;
+        const merged = migrateSettings({ ...state.settings, ...remoteConfig, r2Config: state.settings.r2Config });
+        const currentComparable = JSON.stringify({ ...state.settings, r2Config: undefined });
+        const remoteComparable = JSON.stringify({ ...merged, r2Config: undefined });
+        if (currentComparable !== remoteComparable) {
+          dispatch({ type: 'UPDATE_SETTINGS', payload: { ...merged, r2Config: state.settings.r2Config } });
+        }
+      } catch (e) {
+        console.warn('R2 config sync failed:', e);
+      }
+    };
+    syncConfig();
+    return () => {
+      cancelled = true;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.settings.r2Config?.enabled, state.settings.r2Config?.url, state.settings.r2Config?.app, state.settings.r2Config?.token]);
+
+  useEffect(() => {
+    const config = state.settings.r2Config;
     if (!initialSyncDone.current) return;
     if (!config?.enabled || !config.url || !config.app || !config.token) return;
     if (suppressNextUpload.current) {

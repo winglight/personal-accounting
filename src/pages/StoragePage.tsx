@@ -58,10 +58,23 @@ export const StoragePage: React.FC = () => {
     });
   }, [settings]);
 
-  const handleSaveSettings = (e: React.FormEvent) => {
+  const buildConfigPayload = (data: AppSettings) => {
+    const { r2Config, ...rest } = data;
+    return rest;
+  };
+
+  const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     dispatch({ type: 'UPDATE_SETTINGS', payload: formData });
-    setMessage({ type: 'success', text: t('settings.saved') });
+    try {
+      if (formData.r2Config?.enabled && formData.r2Config?.url && formData.r2Config?.app && formData.r2Config?.token) {
+        await R2SyncManager.uploadJson(buildConfigPayload(formData), formData.r2Config, 'config');
+      }
+      setMessage({ type: 'success', text: t('settings.saved') });
+    } catch (error: unknown) {
+      const messageText = error instanceof Error ? error.message : String(error);
+      setMessage({ type: 'error', text: `${t('settings.r2.fail')}: ${messageText}` });
+    }
     setTimeout(() => setMessage(null), 3000);
   };
 
