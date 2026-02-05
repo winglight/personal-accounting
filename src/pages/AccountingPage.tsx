@@ -9,7 +9,7 @@ import { useI18n } from '../i18n';
 export const AccountingPage: React.FC = () => {
   const { settings } = useAppContext();
   const { t } = useI18n();
-  const [activeTab, setActiveTab] = useState<'stats' | 'chat'>('stats');
+  const [activeTab, setActiveTab] = useState<'stats' | 'chat'>('chat');
   const aiReady = Boolean(settings.aiConfig?.enabled && settings.aiConfig?.token && settings.aiConfig?.baseUrl);
 
   if (aiReady) {
@@ -45,14 +45,9 @@ export const AccountingPage: React.FC = () => {
         </div>
 
         <div className={activeTab === 'stats' ? 'block' : 'hidden'}>
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-            <div className="space-y-6 lg:col-span-7">
-              <TransactionForm />
-              <WeeklyChart />
-            </div>
-            <div className="lg:col-span-5">
-              <TodayRecords />
-            </div>
+          <div className="space-y-6">
+            <WeeklyChart />
+            <TodayRecords />
           </div>
         </div>
       </div>
