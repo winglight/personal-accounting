@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useAppContext } from '../../contexts/AppContext';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
+import { Modal } from '../ui/Modal';
 import { Send, Image as ImageIcon, Check, X, RefreshCw } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { Transaction } from '../../types';
@@ -52,6 +53,16 @@ interface Message {
   retryPayload?: AIQueueItem;
 }
 
+interface EditingTextState {
+  msgId: string;
+  data: AIParsedText;
+}
+
+interface EditingReceiptState {
+  msgId: string;
+  data: AIReceiptResult;
+}
+
 const HISTORY_KEY = 'ai_chat_history';
 const HISTORY_DAYS = 3;
 
@@ -80,6 +91,8 @@ export const AIChat: React.FC = () => {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [aiOnline, setAiOnline] = useState(false);
+  const [editingText, setEditingText] = useState<EditingTextState | null>(null);
+  const [editingReceipt, setEditingReceipt] = useState<EditingReceiptState | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const sessionStarted = useRef(false);
@@ -167,6 +180,12 @@ export const AIChat: React.FC = () => {
     if (!name) return accounts[0]?.id || '';
     const match = accounts.find(a => a.name.toLowerCase().includes(name.toLowerCase()));
     return match?.id || accounts[0]?.id || '';
+  };
+
+  const parseOptionalNumber = (value: string) => {
+    if (!value.trim()) return undefined;
+    const num = Number(value);
+    return Number.isFinite(num) ? num : undefined;
   };
 
   const logUserMessage = useCallback(async (id: string, type: 'text' | 'image', content: unknown, status: 'success' | 'queued') => {
@@ -428,6 +447,49 @@ export const AIChat: React.FC = () => {
     setMessages(prev => prev.map(m => m.id === msgId ? { ...m, status: 'success', content: t('ai.saved') } : m));
   };
 
+  const openTextEditor = (msgId: string, data: AIParsedText) => {
+    setEditingText({ msgId, data: { ...data } });
+  };
+
+  const openReceiptEditor = (msgId: string, data: AIReceiptResult) => {
+    setEditingReceipt({
+      msgId,
+      data: {
+        receipt: data.receipt ? { ...data.receipt } : undefined,
+        items: (data.items || []).map(item => ({ ...item })),
+      },
+    });
+  };
+
+  const saveTextEdit = () => {
+    if (!editingText) return;
+    setMessages(prev => prev.map(m => (
+      m.id === editingText.msgId
+        ? { ...m, parsedText: editingText.data }
+        : m
+    )));
+    setEditingText(null);
+  };
+
+  const saveReceiptEdit = () => {
+    if (!editingReceipt) return;
+    setMessages(prev => prev.map(m => (
+      m.id === editingReceipt.msgId
+        ? { ...m, parsedReceipt: editingReceipt.data }
+        : m
+    )));
+    setEditingReceipt(null);
+  };
+
+  const updateReceiptItem = (index: number, patch: Partial<AIReceiptItem>) => {
+    setEditingReceipt(prev => {
+      if (!prev) return prev;
+      const items = [...(prev.data.items || [])];
+      items[index] = { ...items[index], ...patch };
+      return { ...prev, data: { ...prev.data, items } };
+    });
+  };
+
   const isImageDisabled = Boolean(input.trim());
   const handleRetry = async (message: Message) => {
     if (!message.retryPayload) return;
@@ -441,8 +503,9 @@ export const AIChat: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-10rem)] bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+    <>
+      <div className="flex flex-col h-[calc(100vh-10rem)] bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.map(msg => (
           <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
             {msg.role === 'user' ? (
@@ -493,7 +556,10 @@ export const AIChat: React.FC = () => {
                       >
                         <Check className="h-3 w-3 mr-1" /> {t('ai.confirm')}
                       </button>
-                      <button className="flex-1 bg-gray-200 text-gray-700 py-1 px-2 rounded text-xs flex items-center justify-center">
+                      <button
+                        onClick={() => openTextEditor(msg.id, msg.parsedText!)}
+                        className="flex-1 bg-gray-200 text-gray-700 py-1 px-2 rounded text-xs flex items-center justify-center"
+                      >
                         <X className="h-3 w-3 mr-1" /> {t('ai.edit')}
                       </button>
                     </div>
@@ -519,7 +585,10 @@ export const AIChat: React.FC = () => {
                       >
                         <Check className="h-3 w-3 mr-1" /> {t('ai.confirmAll')}
                       </button>
-                      <button className="flex-1 bg-gray-200 text-gray-700 py-1 px-2 rounded text-xs flex items-center justify-center">
+                      <button
+                        onClick={() => openReceiptEditor(msg.id, msg.parsedReceipt!)}
+                        className="flex-1 bg-gray-200 text-gray-700 py-1 px-2 rounded text-xs flex items-center justify-center"
+                      >
                         <X className="h-3 w-3 mr-1" /> {t('ai.edit')}
                       </button>
                     </div>
@@ -531,39 +600,178 @@ export const AIChat: React.FC = () => {
         ))}
         <div ref={messagesEndRef} />
       </div>
-      <div className="p-3 border-t border-gray-100 space-y-2">
-        <div className="flex items-center space-x-2">
-          <input 
-              type="file" 
-              ref={fileInputRef} 
-              className="hidden" 
-              accept="image/*"
-              onChange={handleImageUpload}
-          />
-          <Button
-            variant="ghost"
-            size="sm"
-            className="p-2"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isImageDisabled}
-          >
-              <ImageIcon className="h-5 w-5 text-gray-500" />
-          </Button>
-          <Input 
-            value={input} 
-            onChange={e => setInput(e.target.value)} 
-            onKeyDown={e => e.key === 'Enter' && handleSend()}
-            placeholder={t('ai.input.placeholder')} 
-            className="flex-1"
-          />
-          <Button onClick={handleSend} disabled={loading || !input.trim()} size="sm">
-            <Send className="h-4 w-4" />
-          </Button>
+        <div className="p-3 border-t border-gray-100 space-y-2">
+          <div className="flex items-center space-x-2">
+            <input 
+                type="file" 
+                ref={fileInputRef} 
+                className="hidden" 
+                accept="image/*"
+                onChange={handleImageUpload}
+            />
+            <Button
+              variant="ghost"
+              size="sm"
+              className="p-2"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isImageDisabled}
+            >
+                <ImageIcon className="h-5 w-5 text-gray-500" />
+            </Button>
+            <Input 
+              value={input} 
+              onChange={e => setInput(e.target.value)} 
+              onKeyDown={e => e.key === 'Enter' && handleSend()}
+              placeholder={t('ai.input.placeholder')} 
+              className="flex-1"
+            />
+            <Button onClick={handleSend} disabled={loading || !input.trim()} size="sm">
+              <Send className="h-4 w-4" />
+            </Button>
+          </div>
+          {!aiOnline && settings.aiConfig?.enabled && (
+            <div className="text-xs text-amber-600">{t('ai.offlineQueued')}</div>
+          )}
         </div>
-        {!aiOnline && settings.aiConfig?.enabled && (
-          <div className="text-xs text-amber-600">{t('ai.offlineQueued')}</div>
-        )}
       </div>
-    </div>
+      <Modal
+        isOpen={Boolean(editingText)}
+        onClose={() => setEditingText(null)}
+        title={t('ai.edit')}
+      >
+        {editingText && (
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="w-full">
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('accounting.type')}</label>
+                <select
+                  className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-600 focus:border-transparent"
+                  value={editingText.data.type || 'expense'}
+                  onChange={e => setEditingText(prev => prev ? { ...prev, data: { ...prev.data, type: e.target.value as 'income' | 'expense' } } : prev)}
+                >
+                  <option value="expense">{t('accounting.expense')}</option>
+                  <option value="income">{t('accounting.income')}</option>
+                </select>
+              </div>
+              <Input
+                label={t('accounting.amount')}
+                type="number"
+                step="0.01"
+                value={editingText.data.amount ?? ''}
+                onChange={e => setEditingText(prev => prev ? { ...prev, data: { ...prev.data, amount: parseOptionalNumber(e.target.value) } } : prev)}
+              />
+            </div>
+            <Input
+              label={t('accounting.date')}
+              type="date"
+              value={editingText.data.date || ''}
+              onChange={e => setEditingText(prev => prev ? { ...prev, data: { ...prev.data, date: e.target.value } } : prev)}
+            />
+            <Input
+              label={t('accounting.category')}
+              value={editingText.data.category || ''}
+              onChange={e => setEditingText(prev => prev ? { ...prev, data: { ...prev.data, category: e.target.value } } : prev)}
+            />
+            <Input
+              label={t('accounting.account')}
+              value={editingText.data.account || ''}
+              onChange={e => setEditingText(prev => prev ? { ...prev, data: { ...prev.data, account: e.target.value } } : prev)}
+            />
+            <Input
+              label={t('accounting.note')}
+              value={editingText.data.note || ''}
+              onChange={e => setEditingText(prev => prev ? { ...prev, data: { ...prev.data, note: e.target.value } } : prev)}
+            />
+            <div className="grid grid-cols-2 gap-3">
+              <Input
+                label={t('accounting.project')}
+                value={editingText.data.project || ''}
+                onChange={e => setEditingText(prev => prev ? { ...prev, data: { ...prev.data, project: e.target.value } } : prev)}
+              />
+              <Input
+                label={t('accounting.payer')}
+                value={editingText.data.payer || ''}
+                onChange={e => setEditingText(prev => prev ? { ...prev, data: { ...prev.data, payer: e.target.value } } : prev)}
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="secondary" onClick={() => setEditingText(null)}>
+                {t('common.cancel')}
+              </Button>
+              <Button onClick={saveTextEdit}>
+                {t('common.save')}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        isOpen={Boolean(editingReceipt)}
+        onClose={() => setEditingReceipt(null)}
+        title={t('ai.edit')}
+      >
+        {editingReceipt && (
+          <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-1">
+            <div className="grid grid-cols-2 gap-3">
+              <Input
+                label={t('accounting.date')}
+                type="date"
+                value={editingReceipt.data.receipt?.date || ''}
+                onChange={e => setEditingReceipt(prev => prev ? {
+                  ...prev,
+                  data: { ...prev.data, receipt: { ...(prev.data.receipt || {}), date: e.target.value } },
+                } : prev)}
+              />
+              <Input
+                label={t('records.receipt')}
+                value={editingReceipt.data.receipt?.merchant || ''}
+                onChange={e => setEditingReceipt(prev => prev ? {
+                  ...prev,
+                  data: { ...prev.data, receipt: { ...(prev.data.receipt || {}), merchant: e.target.value } },
+                } : prev)}
+              />
+            </div>
+            {(editingReceipt.data.items || []).map((item, idx) => (
+              <div key={idx} className="rounded border border-gray-200 p-3 space-y-2">
+                <div className="text-xs text-gray-500">#{idx + 1}</div>
+                <Input
+                  label={t('accounting.note')}
+                  value={item.name || ''}
+                  onChange={e => updateReceiptItem(idx, { name: e.target.value })}
+                />
+                <Input
+                  label={t('accounting.amount')}
+                  type="number"
+                  step="0.01"
+                  value={item.amount ?? ''}
+                  onChange={e => updateReceiptItem(idx, { amount: parseOptionalNumber(e.target.value) })}
+                />
+                <div className="grid grid-cols-2 gap-3">
+                  <Input
+                    label={t('accounting.category')}
+                    value={item.category || ''}
+                    onChange={e => updateReceiptItem(idx, { category: e.target.value })}
+                  />
+                  <Input
+                    label={t('accounting.account')}
+                    value={item.account || ''}
+                    onChange={e => updateReceiptItem(idx, { account: e.target.value })}
+                  />
+                </div>
+              </div>
+            ))}
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="secondary" onClick={() => setEditingReceipt(null)}>
+                {t('common.cancel')}
+              </Button>
+              <Button onClick={saveReceiptEdit}>
+                {t('common.save')}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+    </>
   );
 };
