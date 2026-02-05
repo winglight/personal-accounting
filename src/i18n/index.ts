@@ -84,6 +84,8 @@ const dictionaries: Record<Language, Dict> = {
     'accounting.selectCategory': '选择分类',
     'accounting.selectAccount': '选择账户',
     'accounting.balanceAfter': '预计余额',
+    'accounting.tab.stats': '日/周统计',
+    'accounting.tab.chat': 'AI 聊天',
 
     'today.title': '今日',
     'today.in': '收入',
@@ -223,6 +225,8 @@ const dictionaries: Record<Language, Dict> = {
     'accounting.selectCategory': 'Select Category',
     'accounting.selectAccount': 'Select Account',
     'accounting.balanceAfter': 'Balance after',
+    'accounting.tab.stats': 'Daily/Weekly Stats',
+    'accounting.tab.chat': 'AI Chat',
 
     'today.title': 'Today',
     'today.in': 'In',
