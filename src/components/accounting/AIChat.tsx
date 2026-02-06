@@ -236,6 +236,7 @@ export const AIChat: React.FC = () => {
         baseUrl: settings.aiConfig.baseUrl,
         token: settings.aiConfig.token,
         model: settings.aiConfig.model,
+        stream: settings.aiConfig.stream,
         isNewSession: !sessionStarted.current,
         message: {
           role: 'user',
@@ -285,6 +286,7 @@ export const AIChat: React.FC = () => {
     logAIResponse,
     settings.aiConfig.baseUrl,
     settings.aiConfig.model,
+    settings.aiConfig.stream,
     settings.aiConfig.templates.image,
     settings.aiConfig.templates.text,
     settings.aiConfig.token,
