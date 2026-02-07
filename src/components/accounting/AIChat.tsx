@@ -100,6 +100,23 @@ export const AIChat: React.FC = () => {
   const abortControllers = useRef<Map<string, AbortController>>(new Map());
   const messageAiMap = useRef<Map<string, string>>(new Map());
   const canceledMessageIds = useRef<Set<string>>(new Set());
+  const isMountedRef = useRef(true);
+  const isPageVisibleRef = useRef(true);
+
+  const safeSetMessages = useCallback((action: React.SetStateAction<Message[]>) => {
+    if (!isMountedRef.current || !isPageVisibleRef.current) return;
+    setMessages(action);
+  }, []);
+
+  const safeSetLoading = useCallback((value: boolean) => {
+    if (!isMountedRef.current || !isPageVisibleRef.current) return;
+    setLoading(value);
+  }, []);
+
+  const safeSetAiOnline = useCallback((value: boolean) => {
+    if (!isMountedRef.current || !isPageVisibleRef.current) return;
+    setAiOnline(value);
+  }, []);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -108,20 +125,66 @@ export const AIChat: React.FC = () => {
   useEffect(scrollToBottom, [messages]);
 
   useEffect(() => {
+    const controllers = abortControllers.current;
+    return () => {
+      isMountedRef.current = false;
+      controllers.forEach(controller => controller.abort());
+      controllers.clear();
+    };
+  }, []);
+
+  useEffect(() => {
+    const handlePageHide = () => {
+      isPageVisibleRef.current = false;
+      abortControllers.current.forEach(controller => controller.abort());
+      abortControllers.current.clear();
+    };
+
+    const handlePageShow = (event: PageTransitionEvent) => {
+      isPageVisibleRef.current = true;
+      if (event.persisted) {
+        safeSetLoading(false);
+        processingQueue.current = false;
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      const visible = document.visibilityState === 'visible';
+      isPageVisibleRef.current = visible;
+      if (!visible) {
+        abortControllers.current.forEach(controller => controller.abort());
+        abortControllers.current.clear();
+      }
+    };
+
+    window.addEventListener('pagehide', handlePageHide);
+    window.addEventListener('pageshow', handlePageShow);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.removeEventListener('pagehide', handlePageHide);
+      window.removeEventListener('pageshow', handlePageShow);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [safeSetLoading]);
+
+  useEffect(() => {
     const maxAge = HISTORY_DAYS * 24 * 60 * 60 * 1000;
     const now = Date.now();
     const trimmed = messages.filter(m => m.createdAt && now - new Date(m.createdAt).getTime() <= maxAge);
     if (trimmed.length !== messages.length) {
-      setMessages(trimmed);
+      safeSetMessages(trimmed);
       return;
     }
     localStorage.setItem(HISTORY_KEY, JSON.stringify(trimmed));
-  }, [messages]);
+  }, [messages, safeSetMessages]);
 
   useEffect(() => {
     const queued = getQueue();
     if (queued.length === 0) return;
-    setMessages(prev => {
+    safeSetMessages(prev => {
       const existing = new Set(prev.map(m => m.id));
       const appended = queued
         .filter(item => !existing.has(item.id))
@@ -136,14 +199,14 @@ export const AIChat: React.FC = () => {
         }));
       return appended.length ? [...prev, ...appended] : prev;
     });
-  }, [t]);
+  }, [safeSetMessages, t]);
 
   useEffect(() => {
     if (!settings.aiConfig?.enabled) return;
     let mounted = true;
     const check = async () => {
       const ok = await checkHealth(settings.aiConfig.baseUrl, settings.aiConfig.token);
-      if (mounted) setAiOnline(ok);
+      if (mounted) safeSetAiOnline(ok);
     };
     check();
     const timer = window.setInterval(check, 10000);
@@ -151,7 +214,7 @@ export const AIChat: React.FC = () => {
       mounted = false;
       window.clearInterval(timer);
     };
-  }, [settings.aiConfig?.enabled, settings.aiConfig?.baseUrl, settings.aiConfig?.token]);
+  }, [safeSetAiOnline, settings.aiConfig?.enabled, settings.aiConfig?.baseUrl, settings.aiConfig?.token]);
 
   const buildPromptVars = useCallback((inputText: string, hasImage: boolean) => {
     const recent = transactions.slice(-10).map(t => ({
@@ -239,9 +302,10 @@ export const AIChat: React.FC = () => {
   }, [t]);
 
   const sendToAI = useCallback(async (item: AIQueueItem, userMessageId?: string) => {
+    if (!isMountedRef.current || !isPageVisibleRef.current) return;
     if (userMessageId) {
       if (canceledMessageIds.current.has(userMessageId)) return;
-      setMessages(prev => prev.map(m => m.id === userMessageId ? { ...m, status: 'streaming' } : m));
+      safeSetMessages(prev => prev.map(m => m.id === userMessageId ? { ...m, status: 'streaming' } : m));
     }
     const template = item.type === 'text' ? settings.aiConfig.templates.text : settings.aiConfig.templates.image;
     const prompt = buildPrompt(template, buildPromptVars(item.text || '', item.type === 'image'));
@@ -250,7 +314,7 @@ export const AIChat: React.FC = () => {
     if (userMessageId) {
       messageAiMap.current.set(userMessageId, aiMessageId);
     }
-    setMessages(prev => [
+    safeSetMessages(prev => [
       ...prev,
       { id: aiMessageId, role: 'ai', content: '', status: 'streaming', createdAt: new Date().toISOString() },
     ]);
@@ -276,7 +340,7 @@ export const AIChat: React.FC = () => {
         },
         onDelta: (delta) => {
           if (userMessageId && canceledMessageIds.current.has(userMessageId)) return;
-          setMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, content: m.content + delta } : m));
+          safeSetMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, content: m.content + delta } : m));
         },
       });
       if (userMessageId && canceledMessageIds.current.has(userMessageId)) {
@@ -292,15 +356,15 @@ export const AIChat: React.FC = () => {
           receipt: parsedReceipt.receipt,
           items: Array.isArray(parsedReceipt.items) ? parsedReceipt.items : [],
         };
-        setMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, content: t('ai.parse.receipt'), parsedReceipt: receipt, status: undefined } : m));
+        safeSetMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, content: t('ai.parse.receipt'), parsedReceipt: receipt, status: undefined } : m));
         await logAIResponse(aiMessageId, receipt, 'success');
       } else {
         const parsedText: AIParsedText = parsed;
-        setMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, content: t('ai.parse.text'), parsedText, status: undefined } : m));
+        safeSetMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, content: t('ai.parse.text'), parsedText, status: undefined } : m));
         await logAIResponse(aiMessageId, parsedText, 'success');
       }
       if (userMessageId) {
-        setMessages(prev => prev.map(m => m.id === userMessageId ? { ...m, status: 'success' } : m));
+        safeSetMessages(prev => prev.map(m => m.id === userMessageId ? { ...m, status: 'success' } : m));
       }
     } catch (error) {
       const isCanceled = userMessageId && canceledMessageIds.current.has(userMessageId);
@@ -309,17 +373,17 @@ export const AIChat: React.FC = () => {
         return;
       }
       const errorMessage = buildParseErrorMessage(error, rawResponse);
-      setMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, content: errorMessage, status: 'error' } : m));
+      safeSetMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, content: errorMessage, status: 'error' } : m));
       await logAIResponse(aiMessageId, { error: String(error), rawResponse }, 'error');
       const ok = await checkHealth(settings.aiConfig.baseUrl, settings.aiConfig.token);
       if (!ok) {
-        setAiOnline(false);
+        safeSetAiOnline(false);
         enqueue(item);
         if (userMessageId) {
-          setMessages(prev => prev.map(m => m.id === userMessageId ? { ...m, status: 'queued' } : m));
+          safeSetMessages(prev => prev.map(m => m.id === userMessageId ? { ...m, status: 'queued' } : m));
         }
       } else if (userMessageId) {
-        setMessages(prev => prev.map(m => m.id === userMessageId ? { ...m, status: 'error' } : m));
+        safeSetMessages(prev => prev.map(m => m.id === userMessageId ? { ...m, status: 'error' } : m));
       }
     } finally {
       if (userMessageId) {
@@ -332,6 +396,8 @@ export const AIChat: React.FC = () => {
     buildParseErrorMessage,
     buildPromptVars,
     logAIResponse,
+    safeSetAiOnline,
+    safeSetMessages,
     settings.aiConfig.baseUrl,
     settings.aiConfig.model,
     settings.aiConfig.stream,
@@ -374,7 +440,7 @@ export const AIChat: React.FC = () => {
       status: aiOnline ? 'streaming' : 'queued',
       retryPayload: queueItem,
     };
-    setMessages(prev => [...prev, userMsg]);
+    safeSetMessages(prev => [...prev, userMsg]);
 
     setInput('');
     if (!aiOnline) {
@@ -383,10 +449,10 @@ export const AIChat: React.FC = () => {
       return;
     }
 
-    setLoading(true);
+    safeSetLoading(true);
     await logUserMessage(id, 'text', input, 'success');
     await sendToAI(queueItem, id);
-    setLoading(false);
+    safeSetLoading(false);
   };
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -395,7 +461,9 @@ export const AIChat: React.FC = () => {
     if (input.trim()) return;
     const reader = new FileReader();
     reader.onloadend = async () => {
+      if (!isMountedRef.current || !isPageVisibleRef.current) return;
       const base64 = reader.result as string;
+      if (!base64) return;
       await sendImageNow(file, base64);
     };
     reader.readAsDataURL(file);
@@ -414,7 +482,9 @@ export const AIChat: React.FC = () => {
     const file = new File([blob], `pasted-${Date.now()}.${blob.type.split('/')[1] || 'png'}`, { type: blob.type });
     const reader = new FileReader();
     reader.onloadend = async () => {
+      if (!isMountedRef.current || !isPageVisibleRef.current) return;
       const base64 = reader.result as string;
+      if (!base64) return;
       await sendImageNow(file, base64);
     };
     reader.readAsDataURL(file);
@@ -422,10 +492,12 @@ export const AIChat: React.FC = () => {
 
   const sendImageNow = async (file: File, dataUrl: string) => {
     if (!settings.aiConfig?.token) return;
+    if (!isMountedRef.current || !isPageVisibleRef.current) return;
     const id = uuidv4();
     const hash = settings.aiConfig.logImageMode === 'metadata'
       ? await computeHash(dataUrl)
       : '';
+    if (!isMountedRef.current || !isPageVisibleRef.current) return;
 
     const queueItem: AIQueueItem = {
       id,
@@ -449,7 +521,7 @@ export const AIChat: React.FC = () => {
       status: aiOnline ? 'streaming' : 'queued',
       retryPayload: queueItem,
     };
-    setMessages(prev => [...prev, userMsg]);
+    safeSetMessages(prev => [...prev, userMsg]);
 
     const contentForLog = settings.aiConfig.logImageMode === 'full'
       ? dataUrl
@@ -459,10 +531,10 @@ export const AIChat: React.FC = () => {
       await logUserMessage(id, 'image', contentForLog, 'queued');
       return;
     }
-    setLoading(true);
+    safeSetLoading(true);
     await logUserMessage(id, 'image', contentForLog, 'success');
     await sendToAI(queueItem, id);
-    setLoading(false);
+    safeSetLoading(false);
   };
 
   const handleConfirmText = (msgId: string, data: AIParsedText) => {
@@ -486,7 +558,7 @@ export const AIChat: React.FC = () => {
       } as Transaction
     });
 
-    setMessages(prev => prev.map(m => m.id === msgId ? { ...m, status: 'success', content: t('ai.saved') } : m));
+    safeSetMessages(prev => prev.map(m => m.id === msgId ? { ...m, status: 'success', content: t('ai.saved') } : m));
   };
 
   const handleConfirmReceipt = (msgId: string, receipt: AIReceiptResult) => {
@@ -512,7 +584,7 @@ export const AIChat: React.FC = () => {
       });
     });
 
-    setMessages(prev => prev.map(m => m.id === msgId ? { ...m, status: 'success', content: t('ai.saved') } : m));
+    safeSetMessages(prev => prev.map(m => m.id === msgId ? { ...m, status: 'success', content: t('ai.saved') } : m));
   };
 
   const openTextEditor = (msgId: string, data: AIParsedText) => {
@@ -531,7 +603,7 @@ export const AIChat: React.FC = () => {
 
   const saveTextEdit = () => {
     if (!editingText) return;
-    setMessages(prev => prev.map(m => (
+    safeSetMessages(prev => prev.map(m => (
       m.id === editingText.msgId
         ? { ...m, parsedText: editingText.data }
         : m
@@ -541,7 +613,7 @@ export const AIChat: React.FC = () => {
 
   const saveReceiptEdit = () => {
     if (!editingReceipt) return;
-    setMessages(prev => prev.map(m => (
+    safeSetMessages(prev => prev.map(m => (
       m.id === editingReceipt.msgId
         ? { ...m, parsedReceipt: editingReceipt.data }
         : m
@@ -564,11 +636,11 @@ export const AIChat: React.FC = () => {
     const controller = abortControllers.current.get(messageId);
     if (controller) controller.abort();
     const aiMessageId = messageAiMap.current.get(messageId);
-    setMessages(prev => prev.filter(m => m.id !== messageId && m.id !== aiMessageId));
+    safeSetMessages(prev => prev.filter(m => m.id !== messageId && m.id !== aiMessageId));
   };
 
   const handleDiscard = (messageId: string) => {
-    setMessages(prev => prev.map(m => (
+    safeSetMessages(prev => prev.map(m => (
       m.id === messageId
         ? { ...m, status: 'success', content: t('ai.discarded'), parsedReceipt: undefined, parsedText: undefined }
         : m
@@ -580,10 +652,10 @@ export const AIChat: React.FC = () => {
     if (!message.retryPayload) return;
     if (!aiOnline) {
       enqueue(message.retryPayload);
-      setMessages(prev => prev.map(m => m.id === message.id ? { ...m, status: 'queued' } : m));
+    safeSetMessages(prev => prev.map(m => m.id === message.id ? { ...m, status: 'queued' } : m));
       return;
     }
-    setMessages(prev => prev.map(m => m.id === message.id ? { ...m, status: 'streaming' } : m));
+    safeSetMessages(prev => prev.map(m => m.id === message.id ? { ...m, status: 'streaming' } : m));
     await sendToAI(message.retryPayload, message.id);
   };
 
