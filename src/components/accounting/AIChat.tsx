@@ -10,7 +10,7 @@ import { useI18n } from '../../i18n';
 import { buildPrompt } from '../../utils/promptTemplates';
 import { checkHealth, safeParseJson, streamChat } from '../../utils/aiClient';
 import { appendLog } from '../../utils/aiLogs';
-import { AIQueueItem, dequeue, enqueue, getQueue } from '../../utils/aiQueue';
+import { AIQueueItem, dequeue, enqueue, getQueue, removeFromQueue } from '../../utils/aiQueue';
 
 interface AIParsedText {
   date?: string;
@@ -97,6 +97,9 @@ export const AIChat: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const sessionStarted = useRef(false);
   const processingQueue = useRef(false);
+  const abortControllers = useRef<Map<string, AbortController>>(new Map());
+  const messageAiMap = useRef<Map<string, string>>(new Map());
+  const canceledMessageIds = useRef<Set<string>>(new Set());
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -221,10 +224,17 @@ export const AIChat: React.FC = () => {
   };
 
   const sendToAI = useCallback(async (item: AIQueueItem, userMessageId?: string) => {
+    if (userMessageId) {
+      if (canceledMessageIds.current.has(userMessageId)) return;
+      setMessages(prev => prev.map(m => m.id === userMessageId ? { ...m, status: 'streaming' } : m));
+    }
     const template = item.type === 'text' ? settings.aiConfig.templates.text : settings.aiConfig.templates.image;
     const prompt = buildPrompt(template, buildPromptVars(item.text || '', item.type === 'image'));
 
     const aiMessageId = uuidv4();
+    if (userMessageId) {
+      messageAiMap.current.set(userMessageId, aiMessageId);
+    }
     setMessages(prev => [
       ...prev,
       { id: aiMessageId, role: 'ai', content: '', status: 'streaming', createdAt: new Date().toISOString() },
@@ -232,21 +242,31 @@ export const AIChat: React.FC = () => {
 
     let rawResponse = '';
     try {
+      let controller: AbortController | undefined;
+      if (userMessageId) {
+        controller = new AbortController();
+        abortControllers.current.set(userMessageId, controller);
+      }
       rawResponse = await streamChat({
         baseUrl: settings.aiConfig.baseUrl,
         token: settings.aiConfig.token,
         model: settings.aiConfig.model,
         stream: settings.aiConfig.stream,
         isNewSession: !sessionStarted.current,
+        signal: controller?.signal,
         message: {
           role: 'user',
           content: prompt,
           image_data: item.type === 'image' ? item.imageData : undefined,
         },
         onDelta: (delta) => {
+          if (userMessageId && canceledMessageIds.current.has(userMessageId)) return;
           setMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, content: m.content + delta } : m));
         },
       });
+      if (userMessageId && canceledMessageIds.current.has(userMessageId)) {
+        return;
+      }
       sessionStarted.current = true;
       const parsed = safeParseJson<unknown>(rawResponse);
       if (!parsed) throw new Error('Invalid JSON');
@@ -268,6 +288,11 @@ export const AIChat: React.FC = () => {
         setMessages(prev => prev.map(m => m.id === userMessageId ? { ...m, status: 'success' } : m));
       }
     } catch (error) {
+      const isCanceled = userMessageId && canceledMessageIds.current.has(userMessageId);
+      if (isCanceled) return;
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        return;
+      }
       setMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, content: t('ai.parse.failed'), status: 'error' } : m));
       await logAIResponse(aiMessageId, { error: String(error), rawResponse }, 'error');
       const ok = await checkHealth(settings.aiConfig.baseUrl, settings.aiConfig.token);
@@ -279,6 +304,12 @@ export const AIChat: React.FC = () => {
         }
       } else if (userMessageId) {
         setMessages(prev => prev.map(m => m.id === userMessageId ? { ...m, status: 'error' } : m));
+      }
+    } finally {
+      if (userMessageId) {
+        abortControllers.current.delete(userMessageId);
+        messageAiMap.current.delete(userMessageId);
+        canceledMessageIds.current.delete(userMessageId);
       }
     }
   }, [
@@ -323,6 +354,7 @@ export const AIChat: React.FC = () => {
       role: 'user',
       content: input,
       createdAt: queueItem.createdAt,
+      status: aiOnline ? 'streaming' : 'queued',
       retryPayload: queueItem,
     };
     setMessages(prev => [...prev, userMsg]);
@@ -330,7 +362,6 @@ export const AIChat: React.FC = () => {
     setInput('');
     if (!aiOnline) {
       enqueue(queueItem);
-      setMessages(prev => prev.map(m => m.id === id ? { ...m, status: 'queued' } : m));
       await logUserMessage(id, 'text', input, 'queued');
       return;
     }
@@ -398,6 +429,7 @@ export const AIChat: React.FC = () => {
       content: t('ai.input.image'),
       createdAt: queueItem.createdAt,
       imageData: dataUrl,
+      status: aiOnline ? 'streaming' : 'queued',
       retryPayload: queueItem,
     };
     setMessages(prev => [...prev, userMsg]);
@@ -407,7 +439,6 @@ export const AIChat: React.FC = () => {
       : { name: file.name, size: file.size, type: file.type, hash };
     if (!aiOnline) {
       enqueue(queueItem);
-      setMessages(prev => prev.map(m => m.id === id ? { ...m, status: 'queued' } : m));
       await logUserMessage(id, 'image', contentForLog, 'queued');
       return;
     }
@@ -510,6 +541,23 @@ export const AIChat: React.FC = () => {
     });
   };
 
+  const handleCancelSend = (messageId: string) => {
+    removeFromQueue(messageId);
+    canceledMessageIds.current.add(messageId);
+    const controller = abortControllers.current.get(messageId);
+    if (controller) controller.abort();
+    const aiMessageId = messageAiMap.current.get(messageId);
+    setMessages(prev => prev.filter(m => m.id !== messageId && m.id !== aiMessageId));
+  };
+
+  const handleDiscard = (messageId: string) => {
+    setMessages(prev => prev.map(m => (
+      m.id === messageId
+        ? { ...m, status: 'success', content: t('ai.discarded'), parsedReceipt: undefined, parsedText: undefined }
+        : m
+    )));
+  };
+
   const isImageDisabled = Boolean(input.trim());
   const handleRetry = async (message: Message) => {
     if (!message.retryPayload) return;
@@ -542,6 +590,15 @@ export const AIChat: React.FC = () => {
                     <div className="text-xs text-gray-500 mt-2">{t('ai.queued')}</div>
                   )}
                 </div>
+                {(msg.status === 'queued' || msg.status === 'streaming') && (
+                  <button
+                    type="button"
+                    onClick={() => handleCancelSend(msg.id)}
+                    className="h-8 px-2 rounded-full border border-gray-300 text-gray-600 hover:text-red-600 hover:border-red-400 flex items-center justify-center text-xs"
+                  >
+                    {t('ai.recall')}
+                  </button>
+                )}
                 {msg.status === 'error' && (
                   <button
                     type="button"
@@ -610,6 +667,12 @@ export const AIChat: React.FC = () => {
                         className="flex-1 bg-gray-200 text-gray-700 py-1 px-2 rounded text-xs flex items-center justify-center"
                       >
                         <X className="h-3 w-3 mr-1" /> {t('ai.edit')}
+                      </button>
+                      <button
+                        onClick={() => handleDiscard(msg.id)}
+                        className="flex-1 bg-gray-200 text-gray-700 py-1 px-2 rounded text-xs flex items-center justify-center"
+                      >
+                        <X className="h-3 w-3 mr-1" /> {t('ai.discard')}
                       </button>
                     </div>
                   </div>

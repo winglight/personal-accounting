@@ -145,6 +145,9 @@ const dictionaries: Record<Language, Dict> = {
     'ai.confirm': '确认',
     'ai.saved': '已保存',
     'ai.edit': '编辑',
+    'ai.recall': '撤回',
+    'ai.discard': '放弃',
+    'ai.discarded': '已放弃',
   },
   en: {
     'nav.accounting': 'Accounting',
@@ -286,6 +289,9 @@ const dictionaries: Record<Language, Dict> = {
     'ai.confirm': 'Confirm',
     'ai.saved': 'Saved',
     'ai.edit': 'Edit',
+    'ai.recall': 'Recall',
+    'ai.discard': 'Discard',
+    'ai.discarded': 'Discarded',
   },
 };
 

@@ -13,6 +13,7 @@ export interface AIStreamOptions {
   isNewSession?: boolean;
   onDelta?: (delta: string) => void;
   stream?: boolean;
+  signal?: AbortSignal;
 }
 
 const normalizeBaseUrl = (baseUrl: string) => {
@@ -38,7 +39,7 @@ export const checkHealth = async (baseUrl: string, token: string): Promise<boole
 };
 
 export const streamChat = async (options: AIStreamOptions): Promise<string> => {
-  const { baseUrl, token, message, model, isNewSession, onDelta } = options;
+  const { baseUrl, token, message, model, isNewSession, onDelta, signal } = options;
   const useStream = options.stream !== undefined ? options.stream : true;
 
   const buildBody = (streamFlag: boolean) => JSON.stringify({
@@ -57,6 +58,7 @@ export const streamChat = async (options: AIStreamOptions): Promise<string> => {
       Authorization: `Bearer ${token}`,
     },
     body: buildBody(useStream),
+    signal,
   });
 
   if (!response.ok) {
