@@ -63,8 +63,15 @@ interface EditingReceiptState {
   data: AIReceiptResult;
 }
 
+interface ImageMeta {
+  name?: string;
+  size?: number;
+  type?: string;
+}
+
 const HISTORY_KEY = 'ai_chat_history';
 const HISTORY_DAYS = 3;
+const PENDING_IMAGE_KEY = 'ai_pending_image';
 
 export const AIChat: React.FC = () => {
   const { settings, categories, accounts, transactions, dispatch } = useAppContext();
@@ -423,6 +430,39 @@ export const AIChat: React.FC = () => {
     }
   }, [aiOnline, processQueue]);
 
+  useEffect(() => {
+    const raw = sessionStorage.getItem(PENDING_IMAGE_KEY);
+    if (!raw) return;
+    try {
+      const parsed = JSON.parse(raw) as {
+        id: string;
+        createdAt: string;
+        dataUrl: string;
+        meta: ImageMeta;
+      };
+      if (!parsed?.id || !parsed.dataUrl) {
+        sessionStorage.removeItem(PENDING_IMAGE_KEY);
+        return;
+      }
+      const exists = getQueue().some(item => item.id === parsed.id);
+      if (!exists) {
+        enqueue({
+          id: parsed.id,
+          createdAt: parsed.createdAt,
+          type: 'image',
+          imageData: parsed.dataUrl,
+          imageMeta: parsed.meta,
+        });
+      }
+      sessionStorage.removeItem(PENDING_IMAGE_KEY);
+      if (aiOnline) {
+        processQueue();
+      }
+    } catch {
+      sessionStorage.removeItem(PENDING_IMAGE_KEY);
+    }
+  }, [aiOnline, processQueue]);
+
   const handleSend = async () => {
     if (!input.trim() || !settings.aiConfig?.token) return;
     const id = uuidv4();
@@ -464,7 +504,16 @@ export const AIChat: React.FC = () => {
       if (!isMountedRef.current || !isPageVisibleRef.current) return;
       const base64 = reader.result as string;
       if (!base64) return;
-      await sendImageNow(file, base64);
+      const pendingId = uuidv4();
+      const createdAt = new Date().toISOString();
+      const meta: ImageMeta = { name: file.name, size: file.size, type: file.type };
+      sessionStorage.setItem(PENDING_IMAGE_KEY, JSON.stringify({
+        id: pendingId,
+        createdAt,
+        dataUrl: base64,
+        meta,
+      }));
+      await sendImageNow(meta, base64, { id: pendingId, createdAt });
     };
     reader.readAsDataURL(file);
     e.target.value = '';
@@ -485,38 +534,44 @@ export const AIChat: React.FC = () => {
       if (!isMountedRef.current || !isPageVisibleRef.current) return;
       const base64 = reader.result as string;
       if (!base64) return;
-      await sendImageNow(file, base64);
+      const pendingId = uuidv4();
+      const createdAt = new Date().toISOString();
+      const meta: ImageMeta = { name: file.name, size: file.size, type: file.type };
+      sessionStorage.setItem(PENDING_IMAGE_KEY, JSON.stringify({
+        id: pendingId,
+        createdAt,
+        dataUrl: base64,
+        meta,
+      }));
+      await sendImageNow(meta, base64, { id: pendingId, createdAt });
     };
     reader.readAsDataURL(file);
   };
 
-  const sendImageNow = async (file: File, dataUrl: string) => {
+  const sendImageNow = async (meta: ImageMeta, dataUrl: string, preset?: { id: string; createdAt: string }) => {
     if (!settings.aiConfig?.token) return;
     if (!isMountedRef.current || !isPageVisibleRef.current) return;
-    const id = uuidv4();
+    const id = preset?.id || uuidv4();
+    const createdAt = preset?.createdAt || new Date().toISOString();
     const hash = settings.aiConfig.logImageMode === 'metadata'
       ? await computeHash(dataUrl)
       : '';
     if (!isMountedRef.current || !isPageVisibleRef.current) return;
+    const imageMeta = { ...meta, hash };
 
     const queueItem: AIQueueItem = {
       id,
-      createdAt: new Date().toISOString(),
+      createdAt,
       type: 'image',
       imageData: dataUrl,
-      imageMeta: {
-        name: file.name,
-        size: file.size,
-        type: file.type,
-        hash,
-      },
+      imageMeta,
     };
 
     const userMsg: Message = {
       id,
       role: 'user',
       content: t('ai.input.image'),
-      createdAt: queueItem.createdAt,
+      createdAt,
       imageData: dataUrl,
       status: aiOnline ? 'streaming' : 'queued',
       retryPayload: queueItem,
@@ -525,15 +580,19 @@ export const AIChat: React.FC = () => {
 
     const contentForLog = settings.aiConfig.logImageMode === 'full'
       ? dataUrl
-      : { name: file.name, size: file.size, type: file.type, hash };
-    if (!aiOnline) {
+      : imageMeta;
+    const existing = getQueue().some(item => item.id === id);
+    if (!existing) {
       enqueue(queueItem);
+    }
+    sessionStorage.removeItem(PENDING_IMAGE_KEY);
+    if (!aiOnline) {
       await logUserMessage(id, 'image', contentForLog, 'queued');
       return;
     }
     safeSetLoading(true);
     await logUserMessage(id, 'image', contentForLog, 'success');
-    await sendToAI(queueItem, id);
+    await processQueue();
     safeSetLoading(false);
   };
 
