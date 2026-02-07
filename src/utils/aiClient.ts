@@ -51,6 +51,25 @@ export const streamChat = async (options: AIStreamOptions): Promise<string> => {
 
   const endpoint = `${normalizeBaseUrl(baseUrl)}/chat`;
 
+  const fetchNonStream = async () => {
+    const fallback = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: buildBody(false),
+      signal,
+    });
+    if (!fallback.ok) {
+      throw new Error(`AI request failed: ${fallback.status} ${fallback.statusText}`);
+    }
+    const data = await fallback.json();
+    const content = data?.content || '';
+    if (content && onDelta) onDelta(content);
+    return content;
+  };
+
   const response = await fetch(endpoint, {
     method: 'POST',
     headers: {
@@ -100,24 +119,31 @@ export const streamChat = async (options: AIStreamOptions): Promise<string> => {
         }
       }
     }
+    const tail = buffer.trim();
+    if (tail) {
+      try {
+        const data = JSON.parse(tail);
+        if (data.error) {
+          throw new Error(data.error);
+        }
+        if (data.content) {
+          full += data.content;
+          if (onDelta) onDelta(data.content);
+        }
+      } catch (e) {
+        console.warn('Failed to parse stream tail:', e);
+      }
+    }
+    if (!full.trim()) {
+      return await fetchNonStream();
+    }
     return full;
   } catch (err) {
-    console.warn('Stream read failed, falling back to non-stream request:', err);
-    const fallback = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: buildBody(false),
-    });
-    if (!fallback.ok) {
-      throw new Error(`AI request failed: ${fallback.status} ${fallback.statusText}`);
+    if (signal?.aborted) {
+      throw err;
     }
-    const data = await fallback.json();
-    const content = data?.content || '';
-    if (content && onDelta) onDelta(content);
-    return content;
+    console.warn('Stream read failed, falling back to non-stream request:', err);
+    return await fetchNonStream();
   }
 
 };
