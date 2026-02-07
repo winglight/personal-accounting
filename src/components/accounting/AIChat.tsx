@@ -354,6 +354,24 @@ export const AIChat: React.FC = () => {
     e.target.value = '';
   };
 
+  const handlePaste = async (e: React.ClipboardEvent<HTMLInputElement>) => {
+    if (!settings.aiConfig?.token) return;
+    if (input.trim()) return;
+    const items = Array.from(e.clipboardData?.items || []);
+    const imageItem = items.find(item => item.type.startsWith('image/'));
+    if (!imageItem) return;
+    const blob = imageItem.getAsFile();
+    if (!blob) return;
+    e.preventDefault();
+    const file = new File([blob], `pasted-${Date.now()}.${blob.type.split('/')[1] || 'png'}`, { type: blob.type });
+    const reader = new FileReader();
+    reader.onloadend = async () => {
+      const base64 = reader.result as string;
+      await sendImageNow(file, base64);
+    };
+    reader.readAsDataURL(file);
+  };
+
   const sendImageNow = async (file: File, dataUrl: string) => {
     if (!settings.aiConfig?.token) return;
     const id = uuidv4();
@@ -624,6 +642,7 @@ export const AIChat: React.FC = () => {
               value={input} 
               onChange={e => setInput(e.target.value)} 
               onKeyDown={e => e.key === 'Enter' && handleSend()}
+              onPaste={handlePaste}
               placeholder={t('ai.input.placeholder')} 
               className="flex-1"
             />
