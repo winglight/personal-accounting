@@ -185,7 +185,10 @@ export const AIChat: React.FC = () => {
       safeSetMessages(trimmed);
       return;
     }
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(trimmed));
+    const sanitized = trimmed.map(m => (
+      m.imageData ? { ...m, imageData: undefined } : m
+    ));
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(sanitized));
   }, [messages, safeSetMessages]);
 
   useEffect(() => {
