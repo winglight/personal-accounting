@@ -223,6 +223,21 @@ export const AIChat: React.FC = () => {
     }
   };
 
+  const buildParseErrorMessage = useCallback((error: unknown, raw: string) => {
+    const message = error instanceof Error ? error.message : String(error);
+    const trimmedRaw = raw.trim();
+    if (!trimmedRaw || trimmedRaw === 'No response found') {
+      return t('ai.parse.empty');
+    }
+    if (message.includes('Invalid JSON')) {
+      return t('ai.parse.invalidJson');
+    }
+    if (message.startsWith('AI request failed')) {
+      return t('ai.parse.requestFailed');
+    }
+    return t('ai.parse.errorWithReason', { reason: message });
+  }, [t]);
+
   const sendToAI = useCallback(async (item: AIQueueItem, userMessageId?: string) => {
     if (userMessageId) {
       if (canceledMessageIds.current.has(userMessageId)) return;
@@ -293,7 +308,8 @@ export const AIChat: React.FC = () => {
       if (error instanceof DOMException && error.name === 'AbortError') {
         return;
       }
-      setMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, content: t('ai.parse.failed'), status: 'error' } : m));
+      const errorMessage = buildParseErrorMessage(error, rawResponse);
+      setMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, content: errorMessage, status: 'error' } : m));
       await logAIResponse(aiMessageId, { error: String(error), rawResponse }, 'error');
       const ok = await checkHealth(settings.aiConfig.baseUrl, settings.aiConfig.token);
       if (!ok) {
@@ -313,6 +329,7 @@ export const AIChat: React.FC = () => {
       }
     }
   }, [
+    buildParseErrorMessage,
     buildPromptVars,
     logAIResponse,
     settings.aiConfig.baseUrl,
