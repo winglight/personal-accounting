@@ -28,7 +28,7 @@ A web-based personal accounting application built with React, TypeScript, and Ta
    npm run build
    ```
 
-## Configuration
+## Configuration 
 
 - **AI Accounting**: Go to "Storage", enable AI Accounting, and enter a Zhipu BigModel API key. Receipt images are resized, converted to grayscale, and JPEG-compressed locally before they are sent.
 - **Cloud Sync**: Go to "Storage" page, enter your Cloudflare R2 credentials (Endpoint, Access Key, Secret Key, Bucket Name).
