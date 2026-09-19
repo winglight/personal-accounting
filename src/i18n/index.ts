@@ -23,7 +23,7 @@ const dictionaries: Record<Language, Dict> = {
     'common.loading': '加载中',
     'common.close': '关闭',
     'common.reset': '重置',
-    'common.none': '无',
+    'common.none': '-',
     'common.search': '查询',
 
     'page.categories': '分类',

@@ -6,7 +6,7 @@ import { useI18n } from '../../i18n';
 
 export const TodayRecords: React.FC = () => {
   const { transactions, categories, accounts, dispatch } = useAppContext();
-  const { t } = useI18n();
+  const { t: i18n } = useI18n();
   const today = new Date();
   
   const todayTransactions = transactions.filter(t => 
@@ -22,7 +22,7 @@ export const TodayRecords: React.FC = () => {
     .reduce((sum, t) => sum + t.amount, 0);
 
   const handleDelete = (id: string) => {
-    if (confirm(t('today.deleteConfirm'))) {
+    if (confirm(i18n('today.deleteConfirm'))) {
       dispatch({ type: 'DELETE_TRANSACTION', payload: id });
     }
   };
@@ -33,22 +33,24 @@ export const TodayRecords: React.FC = () => {
   return (
     <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden h-full">
       <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
-        <h3 className="font-semibold text-gray-700">{t('today.title')}</h3>
+        <h3 className="font-semibold text-gray-700">{i18n('today.title')}</h3>
         <div className="text-sm space-x-3">
-          <span className="text-green-600">{t('today.in')}: +{income.toFixed(2)}</span>
-          <span className="text-red-600">{t('today.out')}: -{expense.toFixed(2)}</span>
+          <span className="text-green-600">{i18n('today.in')}: +{income.toFixed(2)}</span>
+          <span className="text-red-600">{i18n('today.out')}: -{expense.toFixed(2)}</span>
         </div>
       </div>
       
       <div className="divide-y divide-gray-100 overflow-y-auto max-h-[500px]">
         {todayTransactions.length === 0 ? (
-          <div className="p-8 text-center text-gray-400 text-sm">{t('today.empty')}</div>
+          <div className="p-8 text-center text-gray-400 text-sm">{i18n('today.empty')}</div>
         ) : (
           todayTransactions.map(t => (
             <div key={t.id} className="p-4 flex justify-between items-center hover:bg-gray-50 group">
               <div className="flex-1">
                 <div className="flex items-center space-x-2">
                   <span className="font-medium text-gray-900">{getCategoryName(t.categoryId)}</span>
+                  <span className="text-gray-400 mx-1">/</span>
+                    <span className="text-gray-600">{t.subcategoryId ? getCategoryName(t.subcategoryId) : i18n('common.none')}</span>
                   {t.note && <span className="text-xs text-gray-500 truncate max-w-[150px]">- {t.note}</span>}
                 </div>
                 <div className="text-xs text-gray-400 mt-1">
