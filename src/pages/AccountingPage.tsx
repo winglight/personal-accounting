@@ -10,7 +10,7 @@ export const AccountingPage: React.FC = () => {
   const { settings } = useAppContext();
   const { t } = useI18n();
   const [activeTab, setActiveTab] = useState<'stats' | 'chat'>('chat');
-  const aiReady = Boolean(settings.aiConfig?.enabled && settings.aiConfig?.token && settings.aiConfig?.baseUrl);
+  const aiReady = Boolean(settings.aiConfig?.enabled && settings.aiConfig?.token && settings.aiConfig?.apiUrl);
 
   if (aiReady) {
     return (

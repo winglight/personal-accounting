@@ -52,11 +52,10 @@ export interface AppSettings {
   language: 'zh' | 'en';
   aiConfig: {
     enabled: boolean;
-    baseUrl: string;
+    apiUrl: string;
     token: string;
-    model?: string;
-    stream: true;
-    logImageMode: 'metadata' | 'full';
+    textModel: string;
+    imageModel: string;
     templates: {
       text: string;
       image: string;

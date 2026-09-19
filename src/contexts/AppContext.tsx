@@ -29,10 +29,10 @@ const defaultSettings: AppSettings = {
   language: 'zh',
   aiConfig: {
     enabled: false,
-    baseUrl: 'http://localhost:8000',
+    apiUrl: 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
     token: '',
-    stream: true,
-    logImageMode: 'metadata',
+    textModel: 'glm-5.3-flash',
+    imageModel: 'glm-4.6v-flashx',
     templates: getDefaultTemplates(),
   },
   mainCurrency: 'CNY',
@@ -66,24 +66,27 @@ const migrateSettings = (settings: unknown): AppSettings => {
     ? { text: templateInput.text, image: templateInput.image }
     : getDefaultTemplates();
 
-  const logImageMode: AppSettings['aiConfig']['logImageMode'] = aiConfigInput.logImageMode === 'full'
-    ? 'full'
-    : 'metadata';
-
   const aiConfig: AppSettings['aiConfig'] = isRecord(base.aiConfig) ? {
     enabled: Boolean(aiConfigInput.enabled),
-    baseUrl: typeof aiConfigInput.baseUrl === 'string' ? aiConfigInput.baseUrl : 'http://localhost:8000',
-    token: typeof aiConfigInput.token === 'string' ? aiConfigInput.token : '',
-    model: typeof aiConfigInput.model === 'string' ? aiConfigInput.model : undefined,
-    stream: true as const,
-    logImageMode,
+    apiUrl: typeof aiConfigInput.apiUrl === 'string'
+      ? aiConfigInput.apiUrl
+      : 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
+    token: typeof aiConfigInput.apiUrl === 'string' && typeof aiConfigInput.token === 'string'
+      ? aiConfigInput.token
+      : '',
+    textModel: aiConfigInput.textModel === 'glm-4.7-flash'
+      ? 'glm-5.3-flash'
+      : typeof aiConfigInput.textModel === 'string' ? aiConfigInput.textModel : 'glm-5.3-flash',
+    imageModel: aiConfigInput.imageModel === 'glm-4.6v-flash'
+      ? 'glm-4.6v-flashx'
+      : typeof aiConfigInput.imageModel === 'string' ? aiConfigInput.imageModel : 'glm-4.6v-flashx',
     templates,
   } : {
     enabled: Boolean(base.aiAccounting),
-    baseUrl: 'http://localhost:8000',
-    token: typeof base.geminiToken === 'string' ? base.geminiToken : '',
-    stream: true as const,
-    logImageMode: 'metadata' as const,
+    apiUrl: 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
+    token: '',
+    textModel: 'glm-5.3-flash',
+    imageModel: 'glm-4.6v-flashx',
     templates,
   };
 

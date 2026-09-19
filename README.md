@@ -9,7 +9,7 @@ A web-based personal accounting application built with React, TypeScript, and Ta
 - **Accounts**: Manage multiple accounts (Bank, WeChat, Alipay, etc.) with multi-currency support.
 - **Statistics**: Visual charts for income, expense, and assets.
 - **Storage**: LocalStorage persistence with Cloudflare R2 sync (Backup/Restore).
-- **AI Accounting**: Parse natural language or receipt images using Google Gemini.
+- **AI Accounting**: Parse natural language with Zhipu `glm-5.3-flash` and receipt images with `glm-4.6v-flashx`.
 
 ## Getting Started
 
@@ -30,7 +30,7 @@ A web-based personal accounting application built with React, TypeScript, and Ta
 
 ## Configuration
 
-- **AI Accounting**: Go to "Storage" page, enable AI Accounting, and enter your Gemini API Token.
+- **AI Accounting**: Go to "Storage", enable AI Accounting, and enter a Zhipu BigModel API key. Receipt images are resized, converted to grayscale, and JPEG-compressed locally before they are sent.
 - **Cloud Sync**: Go to "Storage" page, enter your Cloudflare R2 credentials (Endpoint, Access Key, Secret Key, Bucket Name).
 
 ## Tech Stack
@@ -41,4 +41,4 @@ A web-based personal accounting application built with React, TypeScript, and Ta
 - Chart.js
 - JSZip
 - AWS SDK (for R2)
-- Google Generative AI SDK
+- Zhipu BigModel API

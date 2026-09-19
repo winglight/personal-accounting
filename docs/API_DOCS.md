@@ -1,218 +1,58 @@
-# AI Web to API - API 调用文档
+# 智谱 AI 接入说明
 
-本文档详细说明如何调用 AI Web to API 后端接口，包括文本对话、发送图片以及会话管理。
+应用直接调用智谱 BigModel 的 OpenAI 兼容接口，不再依赖原有的本地 `/chat` 代理。
 
-## 1. 基础信息
+## 默认配置
 
-- **API 地址**: `http://localhost:8000` (默认)
-- **请求方式**: HTTP POST
-- **接口路径**: `/chat`
-- **Content-Type**: `application/json`
+| 配置 | 默认值 |
+|---|---|
+| API 地址 | `https://open.bigmodel.cn/api/paas/v4/chat/completions` |
+| 文本模型 | `glm-5.3-flash` |
+| 图片模型 | `glm-4.6v-flashx` |
+| 鉴权 | `Authorization: Bearer <API Key>` |
 
-## 2. 接口定义
+以上配置可在“设置 → AI 记账”中修改。API Key 会随应用数据保存在当前浏览器的 LocalStorage；不要在不受信任或多人共用的设备上保存生产密钥。
 
-### 2.1 发送聊天请求
+## 文本请求
 
-**Endpoint**: `/chat`
+文本解析以普通 `user` 消息发送，模型被要求仅返回记账 JSON。应用支持 SSE 流式返回，并从 `choices[0].delta.content` 组合完整内容。
 
-**Request Body (JSON)**:
+## 图片请求与本地预处理
 
-| 字段名 | 类型 | 必填 | 说明 |
-| :--- | :--- | :--- | :--- |
-| `messages` | List[Object] | 是 | 消息列表，通常只需要包含最新的一条消息即可（因为网页端会自动保持上下文） |
-| `model` | String | 否 | 模型名称，默认为 "gpt-4" (目前仅作透传，具体取决于网页端选择的模型) |
-| `stream` | Boolean | 否 | 是否流式返回 (默认为 False)。如果为 True，将返回 `application/x-ndjson` 格式的流式数据。 |
-| `is_new_session` | Boolean | 否 | 是否开启新会话 (默认为 True)。如果为 True，插件会尝试点击网页上的 "New Chat" 按钮，开启一个新的对话上下文。 |
+小票不会直接以上传时的原始尺寸发送。浏览器会先完成：
 
-**Message Object**:
+1. 按 EXIF 方向解码图片；
+2. 限制短边 1400 px、长边 4000 px、总像素 400 万；
+3. 转为灰度图；
+4. 以 `0.86`、`0.82`、`0.78` 的 JPEG 质量逐级尝试压缩；
+5. 将约 700 KB 作为软目标，2 MB 作为发送硬上限；
+6. 仅将处理后的 JPEG Data URI 作为 `image_url` 内容发送给视觉模型。
 
-| 字段名 | 类型 | 必填 | 说明 |
-| :--- | :--- | :--- | :--- |
-| `role` | String | 是 | 角色，通常为 "user" |
-| `content` | String | 是 | 文本内容 |
-| `image_data` | String | 否 | Base64 编码的图片数据 (Data URI 格式，例如 `data:image/png;base64,...`) |
-| `image_url` | String | 否 | 图片 URL (备用字段，目前主要使用 image_data) |
+原始图片只参与本地处理，不会默认上传。无法由浏览器解码的 HEIC 图片会提示用户先转换为 JPEG；特别长的小票建议裁剪或分段拍摄。
 
-**Response (JSON)**:
-
-| 字段名 | 类型 | 说明 |
-| :--- | :--- | :--- |
-| `id` | String | 请求 ID |
-| `content` | String | AI 返回的文本内容 |
-| `status` | String | 状态，成功为 "success" |
-
-**Response (Stream)**:
-
-当 `stream=True` 时，接口返回 Content-Type 为 `application/x-ndjson` 的流式数据。
-每一行是一个独立的 JSON 对象。
-
-| 字段名 | 类型 | 说明 |
-| :--- | :--- | :--- |
-| `content` | String | 增量文本内容 (Delta) |
-| `error` | String | 如果发生错误，会返回包含 error 字段的 JSON |
-
-示例数据流:
-```json
-{"content": "你好"}
-{"content": "，"}
-{"content": "我是"}
-{"content": "AI"}
-```
-
-### 2.2 服务健康检查
-
-**Endpoint**: `/healthz`
-
-**Request Method**: `GET`
-
-**Response (JSON)**:
+## 请求结构
 
 ```json
 {
-  "status": "ok"
+  "model": "glm-4.6v-flashx",
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        { "type": "image_url", "image_url": { "url": "data:image/jpeg;base64,..." } },
+        { "type": "text", "text": "请按给定 JSON 结构识别小票" }
+      ]
+    }
+  ],
+  "stream": true,
+  "temperature": 0.1
 }
 ```
 
-## 3. 会话管理 (Session)
+所有 AI 调用都强制使用 SSE 流式响应，并要求响应类型为 `text/event-stream`。输出长度由智谱模型和服务端默认配置决定，应用不再提供非流式回退。
 
-本系统通过浏览器插件控制网页端（如 ChatGPT）来实现 API 功能。
+连接检测会使用同一 API Key 请求 `/models` 验证鉴权；它不会生成内容或消耗生成 token。如果配置的模型未出现在账号返回的模型列表中，页面会保留“连接正常”并给出模型权限提示，因为部分模型可能不通过该列表公开。页面本身也不会周期性调用模型做健康检查。
 
-- **创建 Session**: 实际上是指在浏览器中打开目标 AI 网页（如 chatgpt.com），并确保插件已连接到后端。
-- **保持 Session**: 网页端本身会保持会话上下文。API 调用时，插件会将最新的消息输入到当前的网页对话框中。因此，你不需要在 API 请求中携带完整的历史记录，只需要发送**最新的一条消息**，网页端会自动将其视为当前会话的延续。
-- **开启新会话**: 可以通过在 API 请求中设置 `is_new_session: true` 来自动开启新会话。插件会尝试点击网页上的 "New Chat" 按钮。
+## 本地调用日志
 
-## 4. Python 调用示例
-
-以下是一个完整的 Python 示例，包含：
-1. 发送普通文本消息
-2. 发送带图片的消息 (多模态)
-3. 模拟连续对话
-
-首先安装依赖:
-```bash
-pip install requests
-```
-
-### 4.1 完整 Demo 代码
-
-```python
-import requests
-import base64
-import json
-import os
-
-# API 地址
-API_URL = "http://localhost:8000/chat"
-
-def send_chat(text, image_path=None):
-    """
-    发送聊天请求
-    :param text: 文本提示词
-    :param image_path: 图片路径 (可选)
-    :return: AI 的回复
-    """
-    message = {
-        "role": "user",
-        "content": text
-    }
-
-    # 如果有图片，转换为 Base64
-    if image_path:
-        if os.path.exists(image_path):
-            with open(image_path, "rb") as image_file:
-                encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
-                # 自动识别 mime type 比较复杂，这里简单假设为 png 或 jpg
-                mime_type = "image/png" if image_path.endswith(".png") else "image/jpeg"
-                message["image_data"] = f"data:{mime_type};base64,{encoded_string}"
-                print(f"[INFO] 已加载图片: {image_path}")
-        else:
-            print(f"[WARN] 图片不存在: {image_path}")
-
-    payload = {
-        "messages": [message],
-        "model": "gpt-4"
-    }
-
-    try:
-        print(f"正在发送请求: {text[:20]}...")
-        response = requests.post(API_URL, json=payload, timeout=120) # 设置较长超时以等待网页生成
-        response.raise_for_status()
-        
-        result = response.json()
-        content = result.get("content", "")
-        print("-" * 30)
-        print(f"AI 回复:\n{content}")
-        print("-" * 30)
-        return content
-
-    except requests.exceptions.RequestException as e:
-        print(f"请求失败: {e}")
-        return None
-
-if __name__ == "__main__":
-    # 1. 简单的文本对话 (Session 1)
-    print(">>> 测试文本对话")
-    send_chat("你好，请做一个简单的自我介绍。")
-
-    # 2. 连续对话 (Session 1 继续)
-    # 因为是控制同一个网页 Tab，所以直接发送下一句即可，上下文由网页保持
-    print("\n>>> 测试连续对话")
-    send_chat("刚才我问了什么？")
-
-    # 3. 发送图片 (多模态)
-    # 请确保目录下有一张名为 test_image.png 的图片，或者修改路径
-    print("\n>>> 测试图片分析")
-    # 创建一个简单的测试图片（如果不存在）
-    if not os.path.exists("test_image.png"):
-        print("未找到测试图片，跳过图片测试。")
-    else:
-        send_chat("这张图片里有什么？请详细描述。", "test_image.png")
-```
-
-### 4.2 流式调用示例
-
-```python
-import requests
-import json
-
-API_URL = "http://localhost:8000/chat"
-
-def chat_stream(text):
-    payload = {
-        "messages": [{"role": "user", "content": text}],
-        "stream": True,
-        "is_new_session": True
-    }
-    
-    print(f"正在发送请求 (流式): {text}...")
-    try:
-        with requests.post(API_URL, json=payload, stream=True) as response:
-            response.raise_for_status()
-            
-            print("-" * 30)
-            print("AI 回复:")
-            for line in response.iter_lines():
-                if line:
-                    try:
-                        data = json.loads(line)
-                        if "content" in data:
-                            print(data["content"], end="", flush=True)
-                        elif "error" in data:
-                            print(f"\n[ERROR] {data['error']}")
-                    except json.JSONDecodeError:
-                        pass
-            print("\n" + "-" * 30)
-            
-    except Exception as e:
-        print(f"请求失败: {e}")
-
-if __name__ == "__main__":
-    chat_stream("请写一首关于春天的短诗")
-```
-
-## 5. 注意事项
-
-1. **超时设置**: 网页生成回答可能需要较长时间，建议将 API 调用的超时时间设置长一些（如 60-120秒）。
-2. **浏览器状态**: 确保浏览器已打开目标网页，且插件图标显示为"已连接"状态。
-3. **输入框焦点**: 插件会尝试自动定位输入框，但如果网页结构更新可能会失效。
-4. **图片上传**: 图片上传依赖于网页的文件上传控件，不同网页的实现可能不同。
+AI 日志只保存在当前浏览器的 LocalStorage 中，不上传 R2，也不按日期长期归档。一次请求及其返回结果合并为一条调用日志，最多保留最近 3 条；新日志写入时自动淘汰最旧记录。图片调用只记录文件尺寸、分辨率、类型和哈希等元数据，不保存图片内容。旧版按日期保存的 `ai_logs_*` 数据会在读取新日志时清理。

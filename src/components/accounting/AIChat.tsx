@@ -8,15 +8,17 @@ import { v4 as uuidv4 } from 'uuid';
 import { Transaction } from '../../types';
 import { useI18n } from '../../i18n';
 import { buildPrompt } from '../../utils/promptTemplates';
-import { checkHealth, safeParseJson, streamChat } from '../../utils/aiClient';
-import { appendLog } from '../../utils/aiLogs';
+import { safeParseJson, streamChat } from '../../utils/aiClient';
+import { finishCallLog, startCallLog, updateCallLogStatus } from '../../utils/aiLogs';
 import { AIQueueItem, dequeue, enqueue, getQueue, removeFromQueue } from '../../utils/aiQueue';
+import { processReceiptImage } from '../../utils/receiptImage';
 
 interface AIParsedText {
   date?: string;
   type?: 'income' | 'expense';
   amount?: number;
   category?: string;
+  subcategory?: string;
   account?: string;
   note?: string;
   project?: string;
@@ -27,6 +29,7 @@ interface AIReceiptItem {
   name?: string;
   amount?: number;
   category?: string;
+  subcategory?: string;
   account?: string;
   note?: string;
 }
@@ -67,6 +70,10 @@ interface ImageMeta {
   name?: string;
   size?: number;
   type?: string;
+  originalSize?: number;
+  width?: number;
+  height?: number;
+  overTarget?: boolean;
 }
 
 const HISTORY_KEY = 'ai_chat_history';
@@ -97,12 +104,16 @@ export const AIChat: React.FC = () => {
   });
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const [aiOnline, setAiOnline] = useState(false);
+  const [aiOnline, setAiOnline] = useState(() => Boolean(
+    settings.aiConfig?.enabled
+    && settings.aiConfig?.token
+    && settings.aiConfig?.apiUrl
+    && navigator.onLine
+  ));
   const [editingText, setEditingText] = useState<EditingTextState | null>(null);
   const [editingReceipt, setEditingReceipt] = useState<EditingReceiptState | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const sessionStarted = useRef(false);
   const processingQueue = useRef(false);
   const abortControllers = useRef<Map<string, AbortController>>(new Map());
   const messageAiMap = useRef<Map<string, string>>(new Map());
@@ -132,6 +143,7 @@ export const AIChat: React.FC = () => {
   useEffect(scrollToBottom, [messages]);
 
   useEffect(() => {
+    isMountedRef.current = true;
     const controllers = abortControllers.current;
     return () => {
       isMountedRef.current = false;
@@ -141,6 +153,7 @@ export const AIChat: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    isPageVisibleRef.current = document.visibilityState === 'visible';
     const handlePageHide = () => {
       isPageVisibleRef.current = false;
       abortControllers.current.forEach(controller => controller.abort());
@@ -212,19 +225,20 @@ export const AIChat: React.FC = () => {
   }, [safeSetMessages, t]);
 
   useEffect(() => {
-    if (!settings.aiConfig?.enabled) return;
-    let mounted = true;
-    const check = async () => {
-      const ok = await checkHealth(settings.aiConfig.baseUrl, settings.aiConfig.token);
-      if (mounted) safeSetAiOnline(ok);
-    };
-    check();
-    const timer = window.setInterval(check, 10000);
+    const updateOnline = () => safeSetAiOnline(Boolean(
+      navigator.onLine
+      && settings.aiConfig?.enabled
+      && settings.aiConfig?.token
+      && settings.aiConfig?.apiUrl
+    ));
+    updateOnline();
+    window.addEventListener('online', updateOnline);
+    window.addEventListener('offline', updateOnline);
     return () => {
-      mounted = false;
-      window.clearInterval(timer);
+      window.removeEventListener('online', updateOnline);
+      window.removeEventListener('offline', updateOnline);
     };
-  }, [safeSetAiOnline, settings.aiConfig?.enabled, settings.aiConfig?.baseUrl, settings.aiConfig?.token]);
+  }, [safeSetAiOnline, settings.aiConfig?.enabled, settings.aiConfig?.apiUrl, settings.aiConfig?.token]);
 
   const buildPromptVars = useCallback((inputText: string, hasImage: boolean) => {
     const recent = transactions.slice(-10).map(t => ({
@@ -232,13 +246,17 @@ export const AIChat: React.FC = () => {
       type: t.type,
       amount: t.amount,
       category: categories.find(c => c.id === t.categoryId)?.name || '',
+      subcategory: categories.find(c => c.id === t.subcategoryId)?.name || '',
       account: accounts.find(a => a.id === t.accountId)?.name || '',
       note: t.note || '',
     }));
     return {
       input_text: inputText,
       input_image: hasImage ? 'image_data' : '',
-      categories: categories.map(c => c.name).join(', '),
+      categories: categories.filter(c => !c.parentId).map(parent => {
+        const children = categories.filter(child => child.parentId === parent.id).map(child => child.name);
+        return children.length ? `${parent.name}（${children.join('、')}）` : parent.name;
+      }).join(', '),
       accounts: accounts.map(a => a.name).join(', '),
       recent_transactions: JSON.stringify(recent),
       today: new Date().toISOString().split('T')[0],
@@ -246,10 +264,20 @@ export const AIChat: React.FC = () => {
     };
   }, [accounts, categories, settings.mainCurrency, transactions]);
 
-  const resolveCategoryId = (name?: string) => {
-    if (!name) return categories[0]?.id || '';
-    const match = categories.find(c => c.name.toLowerCase().includes(name.toLowerCase()));
-    return match?.id || categories[0]?.id || '';
+  const resolveCategory = (categoryName?: string, subcategoryName?: string) => {
+    const normalizedCategory = categoryName?.trim().toLowerCase();
+    const normalizedSubcategory = subcategoryName?.trim().toLowerCase();
+    const namedPrimary = normalizedCategory
+      ? categories.find(category => !category.parentId && category.name.toLowerCase().includes(normalizedCategory))
+      : undefined;
+    const namedSecondary = normalizedSubcategory
+      ? categories.find(category => category.parentId && category.name.toLowerCase().includes(normalizedSubcategory))
+      : undefined;
+    const primary = namedPrimary
+      || (namedSecondary ? categories.find(category => category.id === namedSecondary.parentId) : undefined)
+      || categories.find(category => !category.parentId);
+    const secondary = namedSecondary?.parentId === primary?.id ? namedSecondary : undefined;
+    return { categoryId: primary?.id || '', subcategoryId: secondary?.id };
   };
 
   const resolveAccountId = (name?: string) => {
@@ -264,27 +292,19 @@ export const AIChat: React.FC = () => {
     return Number.isFinite(num) ? num : undefined;
   };
 
-  const logUserMessage = useCallback(async (id: string, type: 'text' | 'image', content: unknown, status: 'success' | 'queued') => {
-    await appendLog({
+  const logUserMessage = useCallback((id: string, type: 'text' | 'image', content: unknown, status: 'success' | 'queued') => {
+    startCallLog({
       id,
-      timestamp: new Date().toISOString(),
-      direction: 'user',
-      contentType: type,
-      content,
-      status,
-    }, settings.r2Config);
-  }, [settings.r2Config]);
+      startedAt: new Date().toISOString(),
+      type,
+      input: content,
+      status: status === 'success' ? 'pending' : status,
+    });
+  }, []);
 
-  const logAIResponse = useCallback(async (id: string, content: unknown, status: 'success' | 'error') => {
-    await appendLog({
-      id,
-      timestamp: new Date().toISOString(),
-      direction: 'ai',
-      contentType: 'json',
-      content,
-      status,
-    }, settings.r2Config);
-  }, [settings.r2Config]);
+  const logAIResponse = useCallback((id: string, content: unknown, status: 'success' | 'error') => {
+    finishCallLog(id, content, status);
+  }, []);
 
   const computeHash = async (data: string) => {
     try {
@@ -313,6 +333,7 @@ export const AIChat: React.FC = () => {
 
   const sendToAI = useCallback(async (item: AIQueueItem, userMessageId?: string) => {
     if (!isMountedRef.current || !isPageVisibleRef.current) return;
+    updateCallLogStatus(item.id, 'pending');
     if (userMessageId) {
       if (canceledMessageIds.current.has(userMessageId)) return;
       safeSetMessages(prev => prev.map(m => m.id === userMessageId ? { ...m, status: 'streaming' } : m));
@@ -337,11 +358,9 @@ export const AIChat: React.FC = () => {
         abortControllers.current.set(userMessageId, controller);
       }
       rawResponse = await streamChat({
-        baseUrl: settings.aiConfig.baseUrl,
+        apiUrl: settings.aiConfig.apiUrl,
         token: settings.aiConfig.token,
-        model: settings.aiConfig.model,
-        stream: settings.aiConfig.stream,
-        isNewSession: !sessionStarted.current,
+        model: item.type === 'image' ? settings.aiConfig.imageModel : settings.aiConfig.textModel,
         signal: controller?.signal,
         message: {
           role: 'user',
@@ -356,7 +375,6 @@ export const AIChat: React.FC = () => {
       if (userMessageId && canceledMessageIds.current.has(userMessageId)) {
         return;
       }
-      sessionStarted.current = true;
       const parsed = safeParseJson<unknown>(rawResponse);
       if (!parsed) throw new Error('Invalid JSON');
 
@@ -367,11 +385,11 @@ export const AIChat: React.FC = () => {
           items: Array.isArray(parsedReceipt.items) ? parsedReceipt.items : [],
         };
         safeSetMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, content: t('ai.parse.receipt'), parsedReceipt: receipt, status: undefined } : m));
-        await logAIResponse(aiMessageId, receipt, 'success');
+        logAIResponse(item.id, receipt, 'success');
       } else {
         const parsedText: AIParsedText = parsed;
         safeSetMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, content: t('ai.parse.text'), parsedText, status: undefined } : m));
-        await logAIResponse(aiMessageId, parsedText, 'success');
+        logAIResponse(item.id, parsedText, 'success');
       }
       if (userMessageId) {
         safeSetMessages(prev => prev.map(m => m.id === userMessageId ? { ...m, status: 'success' } : m));
@@ -380,12 +398,13 @@ export const AIChat: React.FC = () => {
       const isCanceled = userMessageId && canceledMessageIds.current.has(userMessageId);
       if (isCanceled) return;
       if (error instanceof DOMException && error.name === 'AbortError') {
+        logAIResponse(item.id, { error: '请求已中止' }, 'error');
         return;
       }
       const errorMessage = buildParseErrorMessage(error, rawResponse);
       safeSetMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, content: errorMessage, status: 'error' } : m));
-      await logAIResponse(aiMessageId, { error: String(error), rawResponse }, 'error');
-      const ok = await checkHealth(settings.aiConfig.baseUrl, settings.aiConfig.token);
+      logAIResponse(item.id, { error: String(error), rawResponse }, 'error');
+      const ok = navigator.onLine;
       if (!ok) {
         safeSetAiOnline(false);
         enqueue(item);
@@ -408,9 +427,9 @@ export const AIChat: React.FC = () => {
     logAIResponse,
     safeSetAiOnline,
     safeSetMessages,
-    settings.aiConfig.baseUrl,
-    settings.aiConfig.model,
-    settings.aiConfig.stream,
+    settings.aiConfig.apiUrl,
+    settings.aiConfig.imageModel,
+    settings.aiConfig.textModel,
     settings.aiConfig.templates.image,
     settings.aiConfig.templates.text,
     settings.aiConfig.token,
@@ -488,12 +507,12 @@ export const AIChat: React.FC = () => {
     setInput('');
     if (!aiOnline) {
       enqueue(queueItem);
-      await logUserMessage(id, 'text', input, 'queued');
+      logUserMessage(id, 'text', input, 'queued');
       return;
     }
 
     safeSetLoading(true);
-    await logUserMessage(id, 'text', input, 'success');
+    logUserMessage(id, 'text', input, 'success');
     await sendToAI(queueItem, id);
     safeSetLoading(false);
   };
@@ -502,23 +521,7 @@ export const AIChat: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file || !settings.aiConfig?.token) return;
     if (input.trim()) return;
-    const reader = new FileReader();
-    reader.onloadend = async () => {
-      if (!isMountedRef.current || !isPageVisibleRef.current) return;
-      const base64 = reader.result as string;
-      if (!base64) return;
-      const pendingId = uuidv4();
-      const createdAt = new Date().toISOString();
-      const meta: ImageMeta = { name: file.name, size: file.size, type: file.type };
-      sessionStorage.setItem(PENDING_IMAGE_KEY, JSON.stringify({
-        id: pendingId,
-        createdAt,
-        dataUrl: base64,
-        meta,
-      }));
-      await sendImageNow(meta, base64, { id: pendingId, createdAt });
-    };
-    reader.readAsDataURL(file);
+    await prepareAndSendImage(file);
     e.target.value = '';
   };
 
@@ -532,33 +535,52 @@ export const AIChat: React.FC = () => {
     if (!blob) return;
     e.preventDefault();
     const file = new File([blob], `pasted-${Date.now()}.${blob.type.split('/')[1] || 'png'}`, { type: blob.type });
-    const reader = new FileReader();
-    reader.onloadend = async () => {
+    await prepareAndSendImage(file);
+  };
+
+  async function prepareAndSendImage(file: File) {
+    safeSetLoading(true);
+    try {
+      const processed = await processReceiptImage(file, true);
       if (!isMountedRef.current || !isPageVisibleRef.current) return;
-      const base64 = reader.result as string;
-      if (!base64) return;
       const pendingId = uuidv4();
       const createdAt = new Date().toISOString();
-      const meta: ImageMeta = { name: file.name, size: file.size, type: file.type };
+      const meta: ImageMeta = {
+        name: processed.file.name,
+        size: processed.outputBytes,
+        type: processed.file.type,
+        originalSize: processed.originalBytes,
+        width: processed.width,
+        height: processed.height,
+        overTarget: processed.overTarget,
+      };
       sessionStorage.setItem(PENDING_IMAGE_KEY, JSON.stringify({
         id: pendingId,
         createdAt,
-        dataUrl: base64,
+        dataUrl: processed.dataUrl,
         meta,
       }));
-      await sendImageNow(meta, base64, { id: pendingId, createdAt });
-    };
-    reader.readAsDataURL(file);
-  };
+      await sendImageNow(meta, processed.dataUrl, { id: pendingId, createdAt });
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      safeSetMessages(previous => [...previous, {
+        id: uuidv4(),
+        role: 'ai',
+        content: t('ai.image.processFailed', { reason }),
+        createdAt: new Date().toISOString(),
+        status: 'error',
+      }]);
+    } finally {
+      safeSetLoading(false);
+    }
+  }
 
-  const sendImageNow = async (meta: ImageMeta, dataUrl: string, preset?: { id: string; createdAt: string }) => {
+  async function sendImageNow(meta: ImageMeta, dataUrl: string, preset?: { id: string; createdAt: string }) {
     if (!settings.aiConfig?.token) return;
     if (!isMountedRef.current || !isPageVisibleRef.current) return;
     const id = preset?.id || uuidv4();
     const createdAt = preset?.createdAt || new Date().toISOString();
-    const hash = settings.aiConfig.logImageMode === 'metadata'
-      ? await computeHash(dataUrl)
-      : '';
+    const hash = await computeHash(dataUrl);
     if (!isMountedRef.current || !isPageVisibleRef.current) return;
     const imageMeta = { ...meta, hash };
 
@@ -581,26 +603,24 @@ export const AIChat: React.FC = () => {
     };
     safeSetMessages(prev => [...prev, userMsg]);
 
-    const contentForLog = settings.aiConfig.logImageMode === 'full'
-      ? dataUrl
-      : imageMeta;
+    const contentForLog = imageMeta;
     const existing = getQueue().some(item => item.id === id);
     if (!existing) {
       enqueue(queueItem);
     }
     sessionStorage.removeItem(PENDING_IMAGE_KEY);
     if (!aiOnline) {
-      await logUserMessage(id, 'image', contentForLog, 'queued');
+      logUserMessage(id, 'image', contentForLog, 'queued');
       return;
     }
     safeSetLoading(true);
-    await logUserMessage(id, 'image', contentForLog, 'success');
+    logUserMessage(id, 'image', contentForLog, 'success');
     await processQueue();
     safeSetLoading(false);
-  };
+  }
 
   const handleConfirmText = (msgId: string, data: AIParsedText) => {
-    const categoryId = resolveCategoryId(data.category);
+    const { categoryId, subcategoryId } = resolveCategory(data.category, data.subcategory);
     const accountId = resolveAccountId(data.account);
 
     dispatch({
@@ -613,6 +633,7 @@ export const AIChat: React.FC = () => {
         type: data.type || 'expense',
         amount: Number(data.amount) || 0,
         categoryId,
+        subcategoryId,
         accountId,
         note: data.note || '',
         project: data.project,
@@ -627,6 +648,7 @@ export const AIChat: React.FC = () => {
     const items = receipt.items || [];
     const receiptId = uuidv4();
     items.forEach((item, index) => {
+      const { categoryId, subcategoryId } = resolveCategory(item.category, item.subcategory);
       dispatch({
         type: 'ADD_TRANSACTION',
         payload: {
@@ -636,7 +658,8 @@ export const AIChat: React.FC = () => {
           date: receipt.receipt?.date || new Date().toISOString().split('T')[0],
           type: 'expense',
           amount: Number(item.amount) || 0,
-          categoryId: resolveCategoryId(item.category),
+          categoryId,
+          subcategoryId,
           accountId: resolveAccountId(item.account),
           note: item.name || item.note || '',
           receiptId,
@@ -694,6 +717,7 @@ export const AIChat: React.FC = () => {
 
   const handleCancelSend = (messageId: string) => {
     removeFromQueue(messageId);
+    finishCallLog(messageId, { error: '用户取消了本次调用' }, 'error');
     canceledMessageIds.current.add(messageId);
     const controller = abortControllers.current.get(messageId);
     if (controller) controller.abort();
@@ -726,11 +750,13 @@ export const AIChat: React.FC = () => {
       <div className="flex flex-col h-[calc(100vh-10rem)] bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.map(msg => (
-          <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+          <div
+            key={msg.id}
+            className={`flex w-full min-w-0 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+          >
             {msg.role === 'user' ? (
-              <div className="flex items-end gap-2">
-                <div className="max-w-[80%] rounded-lg p-3 bg-green-100 text-green-900">
-                  <p className="whitespace-pre-wrap">{msg.content}</p>
+              <div className="w-fit min-w-0 max-w-[80%] rounded-lg bg-green-100 p-3 text-green-900">
+                  <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{msg.content}</p>
                   {msg.imageData && (
                     <img src={msg.imageData} alt="" className="mt-2 max-h-40 rounded border border-green-200" />
                   )}
@@ -740,30 +766,33 @@ export const AIChat: React.FC = () => {
                   {msg.status === 'queued' && (
                     <div className="text-xs text-gray-500 mt-2">{t('ai.queued')}</div>
                   )}
-                </div>
-                {(msg.status === 'queued' || msg.status === 'streaming') && (
-                  <button
-                    type="button"
-                    onClick={() => handleCancelSend(msg.id)}
-                    className="h-8 px-2 rounded-full border border-gray-300 text-gray-600 hover:text-red-600 hover:border-red-400 flex items-center justify-center text-xs"
-                  >
-                    {t('ai.recall')}
-                  </button>
-                )}
-                {msg.status === 'error' && (
-                  <button
-                    type="button"
-                    onClick={() => handleRetry(msg)}
-                    className="h-8 w-8 rounded-full border border-gray-300 text-gray-600 hover:text-green-600 hover:border-green-400 flex items-center justify-center"
-                    aria-label="Retry"
-                  >
-                    <RefreshCw className="h-4 w-4" />
-                  </button>
+                {((msg.status === 'queued' || msg.status === 'streaming') || msg.status === 'error') && (
+                  <div className="mt-2 flex justify-end gap-2">
+                    {(msg.status === 'queued' || msg.status === 'streaming') && (
+                      <button
+                        type="button"
+                        onClick={() => handleCancelSend(msg.id)}
+                        className="h-8 rounded-full border border-gray-300 px-2 text-xs text-gray-600 hover:border-red-400 hover:text-red-600"
+                      >
+                        {t('ai.recall')}
+                      </button>
+                    )}
+                    {msg.status === 'error' && (
+                      <button
+                        type="button"
+                        onClick={() => handleRetry(msg)}
+                        className="flex h-8 w-8 items-center justify-center rounded-full border border-gray-300 text-gray-600 hover:border-green-400 hover:text-green-600"
+                        aria-label="Retry"
+                      >
+                        <RefreshCw className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
             ) : (
-              <div className="max-w-[80%] rounded-lg p-3 bg-gray-100 text-gray-900">
-                <p className="whitespace-pre-wrap">{msg.content}</p>
+              <div className="w-fit min-w-0 max-w-[80%] rounded-lg bg-gray-100 p-3 text-gray-900">
+                <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{msg.content}</p>
                 {msg.status === 'streaming' && !msg.content && (
                   <div className="text-xs text-gray-500 mt-2">{t('ai.streaming')}</div>
                 )}
@@ -908,6 +937,11 @@ export const AIChat: React.FC = () => {
               onChange={e => setEditingText(prev => prev ? { ...prev, data: { ...prev.data, category: e.target.value } } : prev)}
             />
             <Input
+              label={t('accounting.subcategory')}
+              value={editingText.data.subcategory || ''}
+              onChange={e => setEditingText(prev => prev ? { ...prev, data: { ...prev.data, subcategory: e.target.value } } : prev)}
+            />
+            <Input
               label={t('accounting.account')}
               value={editingText.data.account || ''}
               onChange={e => setEditingText(prev => prev ? { ...prev, data: { ...prev.data, account: e.target.value } } : prev)}
@@ -987,6 +1021,11 @@ export const AIChat: React.FC = () => {
                     label={t('accounting.category')}
                     value={item.category || ''}
                     onChange={e => updateReceiptItem(idx, { category: e.target.value })}
+                  />
+                  <Input
+                    label={t('accounting.subcategory')}
+                    value={item.subcategory || ''}
+                    onChange={e => updateReceiptItem(idx, { subcategory: e.target.value })}
                   />
                   <Input
                     label={t('accounting.account')}

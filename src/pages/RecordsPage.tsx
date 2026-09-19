@@ -27,6 +27,17 @@ export const RecordsPage: React.FC = () => {
 
   const getCategoryName = (id: string) => categories.find(c => c.id === id)?.name || t('common.none');
   const getAccountName = (id: string) => accounts.find(a => a.id === id)?.name || t('common.none');
+  const getTransactionTime = (tx: Transaction) => {
+    const timestamp = tx.createdAt || tx.updatedAt;
+    try {
+      return format(parseISO(timestamp), 'HH:mm:ss');
+    } catch {
+      return '--:--:--';
+    }
+  };
+
+  const editPrimaryCategories = categories.filter(c => !c.parentId && c.type === (editData.type || editing?.type));
+  const editSubcategories = categories.filter(c => c.parentId === editData.categoryId);
 
   const openEdit = (tx: Transaction) => {
     setEditing(tx);
@@ -79,10 +90,12 @@ export const RecordsPage: React.FC = () => {
                 <div>
                   <div className="font-medium text-gray-900">
                     {getCategoryName(tx.categoryId)}
+                    <span className="text-gray-400 mx-1">/</span>
+                    <span className="text-gray-600">{tx.subcategoryId ? getCategoryName(tx.subcategoryId) : t('common.none')}</span>
                     {tx.note && <span className="text-xs text-gray-500 ml-2">- {tx.note}</span>}
                   </div>
                   <div className="text-xs text-gray-400 mt-1">
-                    {getAccountName(tx.accountId)} • {tx.date}
+                    {getAccountName(tx.accountId)} • {tx.date} {getTransactionTime(tx)}
                   </div>
                   {tx.receiptId && (
                     <div className="text-[10px] text-gray-400 mt-1">
@@ -127,11 +140,21 @@ export const RecordsPage: React.FC = () => {
           <Select
             label={t('accounting.category')}
             value={editData.categoryId || ''}
-            onChange={e => setEditData(prev => ({ ...prev, categoryId: e.target.value }))}
             options={[
               { value: '', label: t('accounting.selectCategory') },
-              ...categories.filter(c => !c.parentId).map(c => ({ value: c.id, label: c.name })),
+              ...editPrimaryCategories.map(c => ({ value: c.id, label: c.name })),
             ]}
+            onChange={e => setEditData(prev => ({ ...prev, categoryId: e.target.value, subcategoryId: '' }))}
+          />
+          <Select
+            label={t('accounting.subcategory')}
+            value={editData.subcategoryId || ''}
+            onChange={e => setEditData(prev => ({ ...prev, subcategoryId: e.target.value }))}
+            options={[
+              { value: '', label: t('common.none') },
+              ...editSubcategories.map(c => ({ value: c.id, label: c.name })),
+            ]}
+            disabled={!editData.categoryId || editSubcategories.length === 0}
           />
           <Select
             label={t('accounting.account')}

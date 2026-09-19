@@ -1,62 +1,64 @@
-import { R2Config, R2SyncManager } from './r2Sync';
-
-export type AILogEntry = {
+export type AICallLog = {
   id: string;
-  timestamp: string;
-  direction: 'user' | 'ai';
-  contentType: 'text' | 'image' | 'json';
-  content: unknown;
-  status?: 'success' | 'error' | 'queued';
-  meta?: Record<string, unknown>;
+  startedAt: string;
+  completedAt?: string;
+  type: 'text' | 'image';
+  input: unknown;
+  status: 'queued' | 'pending' | 'success' | 'error';
+  response?: unknown;
 };
 
-export const getLogKey = (date = new Date()) => {
-  const yyyy = date.getFullYear();
-  const mm = `${date.getMonth() + 1}`.padStart(2, '0');
-  const dd = `${date.getDate()}`.padStart(2, '0');
-  return `ai_logs_${yyyy}-${mm}-${dd}`;
+const LOG_KEY = 'ai_recent_call_logs';
+const LEGACY_PREFIX = 'ai_logs_';
+const MAX_LOGS = 3;
+
+const removeLegacyLogs = () => {
+  const keys: string[] = [];
+  for (let index = 0; index < localStorage.length; index += 1) {
+    const key = localStorage.key(index);
+    if (key?.startsWith(LEGACY_PREFIX)) keys.push(key);
+  }
+  keys.forEach(key => localStorage.removeItem(key));
 };
 
-const loadLog = (key: string): AILogEntry[] => {
-  const raw = localStorage.getItem(key);
+const loadLogs = (): AICallLog[] => {
+  removeLegacyLogs();
+  const raw = localStorage.getItem(LOG_KEY);
   if (!raw) return [];
   try {
-    return JSON.parse(raw) as AILogEntry[];
+    const logs = JSON.parse(raw) as AICallLog[];
+    return Array.isArray(logs) ? logs.slice(0, MAX_LOGS) : [];
   } catch {
     return [];
   }
 };
 
-const saveLog = (key: string, entries: AILogEntry[]) => {
-  localStorage.setItem(key, JSON.stringify(entries));
+const saveLogs = (logs: AICallLog[]) => {
+  localStorage.setItem(LOG_KEY, JSON.stringify(logs.slice(0, MAX_LOGS)));
 };
 
-export const appendLog = async (entry: AILogEntry, r2Config?: R2Config) => {
-  const key = getLogKey(new Date(entry.timestamp));
-  const entries = loadLog(key);
-  entries.push(entry);
-  saveLog(key, entries);
-  if (r2Config?.enabled) {
-    await R2SyncManager.upload(JSON.stringify(entries), r2Config, key);
-  }
-  return key;
+export const readRecentLogs = () => loadLogs();
+
+export const startCallLog = (entry: Omit<AICallLog, 'completedAt' | 'response'>) => {
+  const logs = loadLogs().filter(log => log.id !== entry.id);
+  saveLogs([entry, ...logs]);
 };
 
-export const readLog = (date: string) => {
-  const key = `ai_logs_${date}`;
-  return loadLog(key);
+export const updateCallLogStatus = (id: string, status: AICallLog['status']) => {
+  const logs = loadLogs();
+  saveLogs(logs.map(log => log.id === id ? { ...log, status } : log));
 };
 
-export const downloadLog = async (date: string, r2Config?: R2Config) => {
-  if (!r2Config?.enabled) return [];
-  const key = `ai_logs_${date}`;
-  const content = await R2SyncManager.downloadText(r2Config, key);
-  if (!content) return [];
-  try {
-    const entries = JSON.parse(content) as AILogEntry[];
-    saveLog(key, entries);
-    return entries;
-  } catch {
-    return [];
-  }
+export const finishCallLog = (
+  id: string,
+  response: unknown,
+  status: Extract<AICallLog['status'], 'success' | 'error'>,
+) => {
+  const logs = loadLogs();
+  saveLogs(logs.map(log => log.id === id ? {
+    ...log,
+    completedAt: new Date().toISOString(),
+    response,
+    status,
+  } : log));
 };

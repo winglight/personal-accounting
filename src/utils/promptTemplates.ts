@@ -13,7 +13,8 @@ export const getDefaultTemplates = () => ({
   "date": "YYYY-MM-DD",
   "type": "income | expense",
   "amount": number,
-  "category": "分类名称",
+  "category": "一级分类名称",
+  "subcategory": "二级分类名称",
   "account": "账户名称",
   "note": "备注/说明",
   "project": "项目",
@@ -22,7 +23,7 @@ export const getDefaultTemplates = () => ({
 
 规则：
 - 缺失字段可为 null
-- category/account 返回名称即可
+- category、subcategory、account 返回已有名称，不要杜撰分类
 - 仅返回 JSON 字符串
 `,
   image: `你是一名个人记账助手。用户提供了一张小票图片（image_data），请识别并拆分为明细项目，返回 JSON。
@@ -46,7 +47,8 @@ export const getDefaultTemplates = () => ({
     {
       "name": "商品/服务名称",
       "amount": number,
-      "category": "分类名称",
+      "category": "一级分类名称",
+      "subcategory": "二级分类名称",
       "account": "账户名称",
       "note": "备注"
     }
@@ -56,6 +58,8 @@ export const getDefaultTemplates = () => ({
 规则：
 - 必须拆分为 items，多条记录
 - items 为空时返回空数组
+- 看不清的字段返回 null，不要猜测；区分合计、实付、找零和优惠
+- category 和 subcategory 只能使用给定的已有分类名称
 - 仅返回 JSON 字符串
 `,
 });
