@@ -4,12 +4,11 @@ export interface AIMessagePayload {
   image_data?: string;
 }
 
-export interface AIStreamOptions {
+export interface AIChatOptions {
   apiUrl: string;
   token: string;
   message: AIMessagePayload;
   model: string;
-  onDelta?: (delta: string) => void;
   signal?: AbortSignal;
 }
 
@@ -96,20 +95,19 @@ export const checkHealth = async (
   }
 };
 
-export const streamChat = async (options: AIStreamOptions): Promise<string> => {
-  const { apiUrl, token, message, model, onDelta, signal } = options;
+export const chatCompletion = async (options: AIChatOptions): Promise<string> => {
+  const { apiUrl, token, message, model, signal } = options;
   const response = await fetch(normalizeApiUrl(apiUrl), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Accept: 'text/event-stream',
-      'Cache-Control': 'no-cache',
+      Accept: 'application/json',
       Authorization: `Bearer ${token.trim()}`,
     },
     body: JSON.stringify({
       model,
       messages: [{ role: message.role, content: buildContent(message) }],
-      stream: true,
+      stream: false,
       temperature: 0.1,
     }),
     signal,
@@ -119,41 +117,33 @@ export const streamChat = async (options: AIStreamOptions): Promise<string> => {
     throw new Error(`AI request failed: ${response.status} ${await extractError(response)}`);
   }
 
-  if (!response.body) throw new Error('AI request failed: empty response body');
-  const contentType = response.headers.get('content-type') || '';
-  if (!contentType.toLowerCase().includes('text/event-stream')) {
-    throw new Error(`AI request failed: expected event stream, received ${contentType || 'unknown content type'}`);
+  let data: unknown;
+  try {
+    data = await response.json();
+  } catch {
+    throw new Error('AI request failed: invalid JSON response');
   }
 
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  let full = '';
-
-  const consumeLine = (line: string) => {
-    const trimmed = line.trim();
-    if (!trimmed.startsWith('data:')) return;
-    const payload = trimmed.slice(5).trim();
-    if (!payload || payload === '[DONE]') return;
-    const data = JSON.parse(payload);
-    if (data.error) throw new Error(data.error.message || String(data.error));
-    const delta = data?.choices?.[0]?.delta?.content || '';
-    if (delta) {
-      full += delta;
-      onDelta?.(delta);
-    }
+  const result = data as {
+    error?: { message?: string };
+    choices?: Array<{
+      message?: {
+        content?: string | Array<{ type?: string; text?: string }>;
+      };
+    }>;
   };
-
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split(/\r?\n/);
-    buffer = lines.pop() || '';
-    for (const line of lines) consumeLine(line);
+  if (result.error) {
+    throw new Error(`AI request failed: ${result.error.message || 'unknown response error'}`);
   }
-  if (buffer.trim()) consumeLine(buffer);
-  return full;
+
+  const content = result.choices?.[0]?.message?.content;
+  const text = typeof content === 'string'
+    ? content
+    : Array.isArray(content)
+      ? content.map(part => part.text || '').join('')
+      : '';
+  if (!text.trim()) throw new Error('AI request failed: empty completion content');
+  return text;
 };
 
 export const safeParseJson = <T = unknown>(content: string): T | null => {

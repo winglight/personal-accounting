@@ -3,12 +3,13 @@ import { useAppContext } from '../../contexts/AppContext';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { Modal } from '../ui/Modal';
+import { Select } from '../ui/Select';
 import { Send, Image as ImageIcon, Check, X, RefreshCw } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { Transaction } from '../../types';
 import { useI18n } from '../../i18n';
 import { buildPrompt } from '../../utils/promptTemplates';
-import { safeParseJson, streamChat } from '../../utils/aiClient';
+import { chatCompletion, safeParseJson } from '../../utils/aiClient';
 import { finishCallLog, startCallLog, updateCallLogStatus } from '../../utils/aiLogs';
 import { AIQueueItem, dequeue, enqueue, getQueue, removeFromQueue } from '../../utils/aiQueue';
 import { processReceiptImage } from '../../utils/receiptImage';
@@ -52,7 +53,7 @@ interface Message {
   imageData?: string;
   parsedText?: AIParsedText;
   parsedReceipt?: AIReceiptResult;
-  status?: 'queued' | 'streaming' | 'success' | 'error';
+  status?: 'queued' | 'processing' | 'success' | 'error';
   retryPayload?: AIQueueItem;
 }
 
@@ -336,7 +337,7 @@ export const AIChat: React.FC = () => {
     updateCallLogStatus(item.id, 'pending');
     if (userMessageId) {
       if (canceledMessageIds.current.has(userMessageId)) return;
-      safeSetMessages(prev => prev.map(m => m.id === userMessageId ? { ...m, status: 'streaming' } : m));
+      safeSetMessages(prev => prev.map(m => m.id === userMessageId ? { ...m, status: 'processing' } : m));
     }
     const template = item.type === 'text' ? settings.aiConfig.templates.text : settings.aiConfig.templates.image;
     const prompt = buildPrompt(template, buildPromptVars(item.text || '', item.type === 'image'));
@@ -347,7 +348,7 @@ export const AIChat: React.FC = () => {
     }
     safeSetMessages(prev => [
       ...prev,
-      { id: aiMessageId, role: 'ai', content: '', status: 'streaming', createdAt: new Date().toISOString() },
+      { id: aiMessageId, role: 'ai', content: '', status: 'processing', createdAt: new Date().toISOString() },
     ]);
 
     let rawResponse = '';
@@ -357,7 +358,7 @@ export const AIChat: React.FC = () => {
         controller = new AbortController();
         abortControllers.current.set(userMessageId, controller);
       }
-      rawResponse = await streamChat({
+      rawResponse = await chatCompletion({
         apiUrl: settings.aiConfig.apiUrl,
         token: settings.aiConfig.token,
         model: item.type === 'image' ? settings.aiConfig.imageModel : settings.aiConfig.textModel,
@@ -366,10 +367,6 @@ export const AIChat: React.FC = () => {
           role: 'user',
           content: prompt,
           image_data: item.type === 'image' ? item.imageData : undefined,
-        },
-        onDelta: (delta) => {
-          if (userMessageId && canceledMessageIds.current.has(userMessageId)) return;
-          safeSetMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, content: m.content + delta } : m));
         },
       });
       if (userMessageId && canceledMessageIds.current.has(userMessageId)) {
@@ -499,7 +496,7 @@ export const AIChat: React.FC = () => {
       role: 'user',
       content: input,
       createdAt: queueItem.createdAt,
-      status: aiOnline ? 'streaming' : 'queued',
+      status: aiOnline ? 'processing' : 'queued',
       retryPayload: queueItem,
     };
     safeSetMessages(prev => [...prev, userMsg]);
@@ -598,7 +595,7 @@ export const AIChat: React.FC = () => {
       content: t('ai.input.image'),
       createdAt,
       imageData: dataUrl,
-      status: aiOnline ? 'streaming' : 'queued',
+      status: aiOnline ? 'processing' : 'queued',
       retryPayload: queueItem,
     };
     safeSetMessages(prev => [...prev, userMsg]);
@@ -715,6 +712,33 @@ export const AIChat: React.FC = () => {
     });
   };
 
+  const primaryCategoryOptions = (type: 'income' | 'expense') => [
+    { value: '', label: t('accounting.selectCategory') },
+    ...categories
+      .filter(category => !category.parentId && category.type === type)
+      .map(category => ({ value: category.name, label: category.name })),
+  ];
+
+  const subcategoryOptions = (categoryName?: string, type: 'income' | 'expense' = 'expense') => {
+    const primaryCategory = categories.find(category => (
+      !category.parentId
+      && category.type === type
+      && category.name === categoryName
+    ));
+
+    return [
+      { value: '', label: t('common.none') },
+      ...categories
+        .filter(category => category.parentId === primaryCategory?.id)
+        .map(category => ({ value: category.name, label: category.name })),
+    ];
+  };
+
+  const accountOptions = [
+    { value: '', label: t('accounting.selectAccount') },
+    ...accounts.map(account => ({ value: account.name, label: account.name })),
+  ];
+
   const handleCancelSend = (messageId: string) => {
     removeFromQueue(messageId);
     finishCallLog(messageId, { error: '用户取消了本次调用' }, 'error');
@@ -741,7 +765,7 @@ export const AIChat: React.FC = () => {
     safeSetMessages(prev => prev.map(m => m.id === message.id ? { ...m, status: 'queued' } : m));
       return;
     }
-    safeSetMessages(prev => prev.map(m => m.id === message.id ? { ...m, status: 'streaming' } : m));
+    safeSetMessages(prev => prev.map(m => m.id === message.id ? { ...m, status: 'processing' } : m));
     await sendToAI(message.retryPayload, message.id);
   };
 
@@ -760,15 +784,15 @@ export const AIChat: React.FC = () => {
                   {msg.imageData && (
                     <img src={msg.imageData} alt="" className="mt-2 max-h-40 rounded border border-green-200" />
                   )}
-                  {msg.status === 'streaming' && !msg.content && (
-                    <div className="text-xs text-gray-500 mt-2">{t('ai.streaming')}</div>
+                  {msg.status === 'processing' && !msg.content && (
+                    <div className="text-xs text-gray-500 mt-2">{t('ai.processing')}</div>
                   )}
                   {msg.status === 'queued' && (
                     <div className="text-xs text-gray-500 mt-2">{t('ai.queued')}</div>
                   )}
-                {((msg.status === 'queued' || msg.status === 'streaming') || msg.status === 'error') && (
+                {((msg.status === 'queued' || msg.status === 'processing') || msg.status === 'error') && (
                   <div className="mt-2 flex justify-end gap-2">
-                    {(msg.status === 'queued' || msg.status === 'streaming') && (
+                    {(msg.status === 'queued' || msg.status === 'processing') && (
                       <button
                         type="button"
                         onClick={() => handleCancelSend(msg.id)}
@@ -793,8 +817,8 @@ export const AIChat: React.FC = () => {
             ) : (
               <div className="w-fit min-w-0 max-w-[80%] rounded-lg bg-gray-100 p-3 text-gray-900">
                 <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{msg.content}</p>
-                {msg.status === 'streaming' && !msg.content && (
-                  <div className="text-xs text-gray-500 mt-2">{t('ai.streaming')}</div>
+                {msg.status === 'processing' && !msg.content && (
+                  <div className="text-xs text-gray-500 mt-2">{t('ai.processing')}</div>
                 )}
                 {msg.status === 'queued' && (
                   <div className="text-xs text-gray-500 mt-2">{t('ai.queued')}</div>
@@ -911,7 +935,15 @@ export const AIChat: React.FC = () => {
                 <select
                   className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-600 focus:border-transparent"
                   value={editingText.data.type || 'expense'}
-                  onChange={e => setEditingText(prev => prev ? { ...prev, data: { ...prev.data, type: e.target.value as 'income' | 'expense' } } : prev)}
+                  onChange={e => setEditingText(prev => prev ? {
+                    ...prev,
+                    data: {
+                      ...prev.data,
+                      type: e.target.value as 'income' | 'expense',
+                      category: '',
+                      subcategory: '',
+                    },
+                  } : prev)}
                 >
                   <option value="expense">{t('accounting.expense')}</option>
                   <option value="income">{t('accounting.income')}</option>
@@ -931,19 +963,26 @@ export const AIChat: React.FC = () => {
               value={editingText.data.date || ''}
               onChange={e => setEditingText(prev => prev ? { ...prev, data: { ...prev.data, date: e.target.value } } : prev)}
             />
-            <Input
+            <Select
               label={t('accounting.category')}
               value={editingText.data.category || ''}
-              onChange={e => setEditingText(prev => prev ? { ...prev, data: { ...prev.data, category: e.target.value } } : prev)}
+              options={primaryCategoryOptions(editingText.data.type || 'expense')}
+              onChange={e => setEditingText(prev => prev ? {
+                ...prev,
+                data: { ...prev.data, category: e.target.value, subcategory: '' },
+              } : prev)}
             />
-            <Input
+            <Select
               label={t('accounting.subcategory')}
               value={editingText.data.subcategory || ''}
+              options={subcategoryOptions(editingText.data.category, editingText.data.type || 'expense')}
               onChange={e => setEditingText(prev => prev ? { ...prev, data: { ...prev.data, subcategory: e.target.value } } : prev)}
+              disabled={!editingText.data.category || subcategoryOptions(editingText.data.category, editingText.data.type || 'expense').length === 1}
             />
-            <Input
+            <Select
               label={t('accounting.account')}
               value={editingText.data.account || ''}
+              options={accountOptions}
               onChange={e => setEditingText(prev => prev ? { ...prev, data: { ...prev.data, account: e.target.value } } : prev)}
             />
             <Input
@@ -1017,19 +1056,23 @@ export const AIChat: React.FC = () => {
                   onChange={e => updateReceiptItem(idx, { amount: parseOptionalNumber(e.target.value) })}
                 />
                 <div className="grid grid-cols-2 gap-3">
-                  <Input
+                  <Select
                     label={t('accounting.category')}
                     value={item.category || ''}
-                    onChange={e => updateReceiptItem(idx, { category: e.target.value })}
+                    options={primaryCategoryOptions('expense')}
+                    onChange={e => updateReceiptItem(idx, { category: e.target.value, subcategory: '' })}
                   />
-                  <Input
+                  <Select
                     label={t('accounting.subcategory')}
                     value={item.subcategory || ''}
+                    options={subcategoryOptions(item.category)}
                     onChange={e => updateReceiptItem(idx, { subcategory: e.target.value })}
+                    disabled={!item.category || subcategoryOptions(item.category).length === 1}
                   />
-                  <Input
+                  <Select
                     label={t('accounting.account')}
                     value={item.account || ''}
+                    options={accountOptions}
                     onChange={e => updateReceiptItem(idx, { account: e.target.value })}
                   />
                 </div>
