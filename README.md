@@ -11,7 +11,7 @@ A web-based personal accounting application built with React, TypeScript, and Ta
 - **Storage**: LocalStorage persistence with Cloudflare R2 sync (Backup/Restore).
 - **AI Accounting**: Parse natural language with Zhipu `glm-5.3-flash` and receipt images with `glm-4.6v-flashx`.
 
-## Getting Started
+## Getting Started 
 
 1. Install dependencies:
    ```bash
