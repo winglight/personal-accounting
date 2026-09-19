@@ -2,7 +2,7 @@
 
 A web-based personal accounting application built with React, TypeScript, and Tailwind CSS.
 
-## Features
+## Features 
 
 - **Accounting**: Record daily income and expenses.
 - **Categories**: Manage multi-level categories.
