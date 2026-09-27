@@ -21,12 +21,13 @@ export interface Account {
 export interface Transaction {
   id: string;
   date: string; // ISO日期格式
-  type: 'income' | 'expense';
+  type: 'income' | 'expense' | 'transfer';
   categoryId: string;
   subcategoryId?: string;
   amount: number;
   project?: string;
   accountId: string;
+  targetAccountId?: string; // 转账的转入账户
   payer?: string;
   note?: string;
   attachments?: string[]; // 图片附件路径

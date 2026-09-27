@@ -53,6 +53,26 @@ const initialState: LocalStorageData = {
   lastUpdated: new Date().toISOString(),
 };
 
+const applyTransactionBalance = (
+  accounts: Account[],
+  transaction: Transaction,
+  direction: 1 | -1,
+) => accounts.map((account) => {
+  if (transaction.type === 'transfer') {
+    if (account.id === transaction.accountId) {
+      return { ...account, balance: account.balance - transaction.amount * direction };
+    }
+    if (account.id === transaction.targetAccountId) {
+      return { ...account, balance: account.balance + transaction.amount * direction };
+    }
+    return account;
+  }
+
+  if (account.id !== transaction.accountId) return account;
+  const sign = transaction.type === 'income' ? 1 : -1;
+  return { ...account, balance: account.balance + transaction.amount * sign * direction };
+});
+
 type UnknownRecord = Record<string, unknown>;
 
 const isRecord = (value: unknown): value is UnknownRecord => typeof value === 'object' && value !== null;
@@ -170,14 +190,8 @@ const appReducer = (state: LocalStorageData, action: Action): LocalStorageData =
         accounts: state.accounts.filter(a => a.id !== action.payload),
       };
     case 'ADD_TRANSACTION': {
-      // Update account balance
       const tx = action.payload;
-      const account = state.accounts.find(a => a.id === tx.accountId);
-      let updatedAccounts = state.accounts;
-      if (account) {
-        const balanceChange = tx.type === 'income' ? tx.amount : -tx.amount;
-        updatedAccounts = state.accounts.map(a => a.id === tx.accountId ? { ...a, balance: a.balance + balanceChange } : a);
-      }
+      const updatedAccounts = applyTransactionBalance(state.accounts, tx, 1);
       return { ...newState, transactions: [...state.transactions, tx], accounts: updatedAccounts };
     }
       
@@ -187,20 +201,8 @@ const appReducer = (state: LocalStorageData, action: Action): LocalStorageData =
       
       const newTxData = { ...oldTx, ...action.payload.transaction };
       
-      // Revert old
-      const oldAccount = state.accounts.find(a => a.id === oldTx.accountId);
-      let tempAccounts = state.accounts;
-      if (oldAccount) {
-        const revertChange = oldTx.type === 'income' ? -oldTx.amount : oldTx.amount;
-        tempAccounts = tempAccounts.map(a => a.id === oldTx.accountId ? { ...a, balance: a.balance + revertChange } : a);
-      }
-      
-      // Apply new
-      const newAccount = tempAccounts.find(a => a.id === newTxData.accountId);
-      if (newAccount) {
-        const applyChange = newTxData.type === 'income' ? newTxData.amount : -newTxData.amount;
-        tempAccounts = tempAccounts.map(a => a.id === newTxData.accountId ? { ...a, balance: a.balance + applyChange } : a);
-      }
+      const revertedAccounts = applyTransactionBalance(state.accounts, oldTx, -1);
+      const tempAccounts = applyTransactionBalance(revertedAccounts, newTxData, 1);
       
       return {
         ...newState,
@@ -213,13 +215,7 @@ const appReducer = (state: LocalStorageData, action: Action): LocalStorageData =
        const delTx = state.transactions.find(t => t.id === action.payload);
        if (!delTx) return newState;
        
-       // Revert balance
-       const delAccount = state.accounts.find(a => a.id === delTx.accountId);
-       let delAccounts = state.accounts;
-       if (delAccount) {
-         const revertDel = delTx.type === 'income' ? -delTx.amount : delTx.amount;
-         delAccounts = delAccounts.map(a => a.id === delTx.accountId ? { ...a, balance: a.balance + revertDel } : a);
-       }
+       const delAccounts = applyTransactionBalance(state.accounts, delTx, -1);
        
        return {
          ...newState,

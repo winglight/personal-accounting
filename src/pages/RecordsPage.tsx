@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useAppContext } from '../contexts/AppContext';
 import { useI18n } from '../i18n';
 import { format, parseISO } from 'date-fns';
@@ -17,13 +17,44 @@ export const RecordsPage: React.FC = () => {
   });
   const [editing, setEditing] = useState<Transaction | null>(null);
   const [editData, setEditData] = useState<Partial<Transaction>>({});
+  const [typeFilter, setTypeFilter] = useState<'all' | 'income' | 'expense'>('all');
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const [subcategoryFilter, setSubcategoryFilter] = useState('');
+  const [visibleCount, setVisibleCount] = useState(10);
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
+
+  const filterPrimaryCategories = useMemo(() => categories.filter(category => (
+    !category.parentId && (typeFilter === 'all' || category.type === typeFilter)
+  )), [categories, typeFilter]);
+  const filterSubcategories = useMemo(() => categories.filter(category => (
+    category.parentId === categoryFilter
+  )), [categories, categoryFilter]);
 
   const filtered = useMemo(() => {
-    return transactions.filter((t) => {
-      const date = parseISO(t.date);
-      return date >= parseISO(dateRange.start) && date <= parseISO(dateRange.end);
+    return transactions.filter((transaction) => {
+      if (transaction.type === 'transfer') return false;
+      const date = parseISO(transaction.date);
+      return date >= parseISO(dateRange.start)
+        && date <= parseISO(dateRange.end)
+        && (typeFilter === 'all' || transaction.type === typeFilter)
+        && (!categoryFilter || transaction.categoryId === categoryFilter)
+        && (!subcategoryFilter || transaction.subcategoryId === subcategoryFilter);
     }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  }, [transactions, dateRange]);
+  }, [transactions, dateRange, typeFilter, categoryFilter, subcategoryFilter]);
+
+  useEffect(() => {
+    setVisibleCount(10);
+  }, [dateRange, typeFilter, categoryFilter, subcategoryFilter]);
+
+  useEffect(() => {
+    const target = loadMoreRef.current;
+    if (!target || visibleCount >= filtered.length) return;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) setVisibleCount(count => Math.min(count + 10, filtered.length));
+    }, { rootMargin: '120px' });
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [filtered.length, visibleCount]);
 
   const getCategoryName = (id: string) => categories.find(c => c.id === id)?.name || t('common.none');
   const getAccountName = (id: string) => accounts.find(a => a.id === id)?.name || t('common.none');
@@ -65,7 +96,7 @@ export const RecordsPage: React.FC = () => {
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">{t('page.records')}</h1>
 
-      <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 flex flex-wrap gap-4 items-end">
+      <div className="bg-white p-3 rounded-lg shadow-sm border border-gray-200 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 items-end">
         <Input
           label={t('records.rangeStart')}
           type="date"
@@ -78,6 +109,42 @@ export const RecordsPage: React.FC = () => {
           value={dateRange.end}
           onChange={e => setDateRange(prev => ({ ...prev, end: e.target.value }))}
         />
+        <Select
+          label={t('records.type')}
+          value={typeFilter}
+          onChange={event => {
+            setTypeFilter(event.target.value as typeof typeFilter);
+            setCategoryFilter('');
+            setSubcategoryFilter('');
+          }}
+          options={[
+            { value: 'all', label: t('records.allTypes') },
+            { value: 'expense', label: t('accounting.expense') },
+            { value: 'income', label: t('accounting.income') },
+          ]}
+        />
+        <Select
+          label={t('records.primaryCategory')}
+          value={categoryFilter}
+          onChange={event => {
+            setCategoryFilter(event.target.value);
+            setSubcategoryFilter('');
+          }}
+          options={[
+            { value: '', label: t('records.allPrimary') },
+            ...filterPrimaryCategories.map(category => ({ value: category.id, label: category.name })),
+          ]}
+        />
+        <Select
+          label={t('records.secondaryCategory')}
+          value={subcategoryFilter}
+          onChange={event => setSubcategoryFilter(event.target.value)}
+          disabled={!categoryFilter || filterSubcategories.length === 0}
+          options={[
+            { value: '', label: t('records.allSecondary') },
+            ...filterSubcategories.map(category => ({ value: category.id, label: category.name })),
+          ]}
+        />
       </div>
 
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
@@ -85,7 +152,7 @@ export const RecordsPage: React.FC = () => {
           <div className="p-8 text-center text-gray-400 text-sm">{t('records.empty')}</div>
         ) : (
           <div className="divide-y divide-gray-100">
-            {filtered.map((tx) => (
+            {filtered.slice(0, visibleCount).map((tx) => (
               <div key={tx.id} className="p-4 flex justify-between items-center">
                 <div>
                   <div className="font-medium text-gray-900">
@@ -116,6 +183,11 @@ export const RecordsPage: React.FC = () => {
                 </div>
               </div>
             ))}
+            {visibleCount < filtered.length && (
+              <div ref={loadMoreRef} className="p-3 text-center text-xs text-gray-400">
+                {t('records.loadingMore')}
+              </div>
+            )}
           </div>
         )}
       </div>

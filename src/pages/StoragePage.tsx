@@ -21,6 +21,7 @@ export const StoragePage: React.FC = () => {
   const [aiStatusMessage, setAiStatusMessage] = useState('');
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   const [logsOpen, setLogsOpen] = useState(false);
+  const [apiKeyGuideOpen, setApiKeyGuideOpen] = useState(false);
   const [logs, setLogs] = useState<AICallLog[]>([]);
 
   const [formData, setFormData] = useState<AppSettings>(() => ({
@@ -276,6 +277,13 @@ export const StoragePage: React.FC = () => {
               value={formData.aiConfig.token}
               onChange={e => setFormData({ ...formData, aiConfig: { ...formData.aiConfig, token: e.target.value } })}
             />
+            <button
+              type="button"
+              className="text-sm font-medium text-green-700 hover:text-green-800 hover:underline"
+              onClick={() => setApiKeyGuideOpen(true)}
+            >
+              {t('settings.ai.freeKey')}
+            </button>
             <Input
               label={t('settings.ai.textModel')}
               value={formData.aiConfig.textModel}
@@ -344,6 +352,33 @@ export const StoragePage: React.FC = () => {
             </Button>
         </div>
       </form>
+
+      <Modal isOpen={apiKeyGuideOpen} onClose={() => setApiKeyGuideOpen(false)} title={t('settings.ai.keyGuide.title')}>
+        <div className="space-y-4 text-sm text-gray-700">
+          <ol className="list-decimal space-y-3 pl-5">
+            <li>{t('settings.ai.keyGuide.step1')}</li>
+            <li>{t('settings.ai.keyGuide.step2')}</li>
+            <li>{t('settings.ai.keyGuide.step3')}</li>
+            <li>{t('settings.ai.keyGuide.step4')}</li>
+          </ol>
+          <div className="rounded-md bg-amber-50 p-3 text-amber-800">
+            {t('settings.ai.keyGuide.notice')}
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="ghost" onClick={() => setApiKeyGuideOpen(false)}>
+              {t('common.close')}
+            </Button>
+            <a
+              href="https://open.bigmodel.cn/usercenter/apikeys"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex h-10 items-center justify-center rounded-md bg-green-600 px-4 py-2 font-medium text-white shadow-sm transition-colors hover:bg-green-700"
+            >
+              {t('settings.ai.keyGuide.open')}
+            </a>
+          </div>
+        </div>
+      </Modal>
 
       <Modal isOpen={logsOpen} onClose={() => setLogsOpen(false)} title={t('settings.logs.title')}>
         <div className="max-h-[65vh] overflow-y-auto space-y-3">
