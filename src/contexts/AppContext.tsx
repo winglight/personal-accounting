@@ -1,29 +1,7 @@
-import React, { createContext, useContext, useEffect, useReducer, useRef } from 'react';
-import { 
-  Category, Account, Transaction, ExchangeRate, AppSettings, LocalStorageData 
-} from '../types';
-import { R2SyncManager } from '../utils/r2Sync';
+import React, { createContext, useCallback, useContext, useEffect, useReducer, useRef, useState } from 'react';
+import type { Account, AppSettings, Category, ExchangeRate, LocalStorageData, Transaction } from '../types';
+import { fetchData, sendAction } from '../utils/api';
 import { getDefaultTemplates } from '../utils/promptTemplates';
-
-// Initial Data
-const defaultCategories: Category[] = [
-  { id: '1', name: 'Catering', type: 'expense', sortOrder: 1, icon: 'Utensils' },
-  { id: '2', name: 'Traffic', type: 'expense', sortOrder: 2, icon: 'Bus' },
-  { id: '3', name: 'Shopping', type: 'expense', sortOrder: 3, icon: 'ShoppingBag' },
-  { id: '4', name: 'Entertainment', type: 'expense', sortOrder: 4, icon: 'Film' },
-  { id: '5', name: 'Medical', type: 'expense', sortOrder: 5, icon: 'Activity' },
-  { id: '6', name: 'Education', type: 'expense', sortOrder: 6, icon: 'Book' },
-  { id: '101', name: 'Salary', type: 'income', sortOrder: 1, icon: 'Banknote' },
-  { id: '102', name: 'Bonus', type: 'income', sortOrder: 2, icon: 'Gift' },
-  { id: '103', name: 'Investment', type: 'income', sortOrder: 3, icon: 'TrendingUp' },
-];
-
-const defaultAccounts: Account[] = [
-  { id: '1', name: 'Cash', type: 'cash', currency: 'CNY', balance: 0, isMain: true },
-  { id: '2', name: 'Bank Card', type: 'bank', currency: 'CNY', balance: 0, isMain: false },
-  { id: '3', name: 'WeChat', type: 'wechat', currency: 'CNY', balance: 0, isMain: false },
-  { id: '4', name: 'Alipay', type: 'alipay', currency: 'CNY', balance: 0, isMain: false },
-];
 
 const defaultSettings: AppSettings = {
   language: 'zh',
@@ -35,116 +13,24 @@ const defaultSettings: AppSettings = {
     imageModel: 'glm-4.6v-flashx',
     templates: getDefaultTemplates(),
   },
-  mainCurrency: 'CNY',
-  r2Config: {
-    enabled: false,
-    app: '',
-    url: '',
-    token: '',
-  },
+  mainCurrency: 'CNY', version: 1,
 };
 
 const initialState: LocalStorageData = {
-  categories: defaultCategories,
-  accounts: defaultAccounts,
-  transactions: [],
-  exchangeRates: [],
-  settings: defaultSettings,
-  lastUpdated: new Date().toISOString(),
+  categories: [], accounts: [], transactions: [], exchangeRates: [],
+  settings: defaultSettings, lastUpdated: new Date().toISOString(),
 };
 
-const applyTransactionBalance = (
-  accounts: Account[],
-  transaction: Transaction,
-  direction: 1 | -1,
-) => accounts.map((account) => {
-  if (transaction.type === 'transfer') {
-    if (account.id === transaction.accountId) {
-      return { ...account, balance: account.balance - transaction.amount * direction };
-    }
-    if (account.id === transaction.targetAccountId) {
-      return { ...account, balance: account.balance + transaction.amount * direction };
-    }
+const applyTransactionBalance = (accounts: Account[], tx: Transaction, direction: 1 | -1) => accounts.map(account => {
+  if (tx.type === 'transfer') {
+    if (account.id === tx.accountId) return { ...account, balance: account.balance - tx.amount * direction };
+    if (account.id === tx.targetAccountId) return { ...account, balance: account.balance + tx.amount * direction };
     return account;
   }
-
-  if (account.id !== transaction.accountId) return account;
-  const sign = transaction.type === 'income' ? 1 : -1;
-  return { ...account, balance: account.balance + transaction.amount * sign * direction };
+  if (account.id !== tx.accountId) return account;
+  return { ...account, balance: account.balance + tx.amount * (tx.type === 'income' ? 1 : -1) * direction };
 });
 
-type UnknownRecord = Record<string, unknown>;
-
-const isRecord = (value: unknown): value is UnknownRecord => typeof value === 'object' && value !== null;
-
-const migrateSettings = (settings: unknown): AppSettings => {
-  const base = isRecord(settings) ? settings : {};
-  const aiConfigInput = isRecord(base.aiConfig) ? base.aiConfig : {};
-  const templateInput = isRecord(aiConfigInput.templates) ? aiConfigInput.templates : {};
-
-  const templates = typeof templateInput.text === 'string' && typeof templateInput.image === 'string'
-    ? { text: templateInput.text, image: templateInput.image }
-    : getDefaultTemplates();
-
-  const aiConfig: AppSettings['aiConfig'] = isRecord(base.aiConfig) ? {
-    enabled: Boolean(aiConfigInput.enabled),
-    apiUrl: typeof aiConfigInput.apiUrl === 'string'
-      ? aiConfigInput.apiUrl
-      : 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
-    token: typeof aiConfigInput.apiUrl === 'string' && typeof aiConfigInput.token === 'string'
-      ? aiConfigInput.token
-      : '',
-    textModel: aiConfigInput.textModel === 'glm-4.7-flash'
-      ? 'glm-5.3-flash'
-      : typeof aiConfigInput.textModel === 'string' ? aiConfigInput.textModel : 'glm-5.3-flash',
-    imageModel: aiConfigInput.imageModel === 'glm-4.6v-flash'
-      ? 'glm-4.6v-flashx'
-      : typeof aiConfigInput.imageModel === 'string' ? aiConfigInput.imageModel : 'glm-4.6v-flashx',
-    templates,
-  } : {
-    enabled: Boolean(base.aiAccounting),
-    apiUrl: 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
-    token: '',
-    textModel: 'glm-5.3-flash',
-    imageModel: 'glm-4.6v-flashx',
-    templates,
-  };
-
-  const r2Input = isRecord(base.r2Config) ? base.r2Config : undefined;
-  const r2Config = r2Input && typeof r2Input.url === 'string' ? {
-    enabled: Boolean(r2Input.enabled),
-    app: typeof r2Input.app === 'string' ? r2Input.app : '',
-    url: r2Input.url,
-    token: typeof r2Input.token === 'string' ? r2Input.token : '',
-  } : {
-    enabled: false,
-    app: '',
-    url: '',
-    token: '',
-  };
-
-  return {
-    language: base.language === 'en' ? 'en' : 'zh',
-    aiConfig,
-    mainCurrency: typeof base.mainCurrency === 'string' ? base.mainCurrency : 'CNY',
-    lastSyncTime: typeof base.lastSyncTime === 'string' ? base.lastSyncTime : undefined,
-    r2Config,
-  };
-};
-
-const migrateState = (state: unknown): LocalStorageData => {
-  const base = isRecord(state) ? state : {};
-  return {
-    categories: Array.isArray(base.categories) ? (base.categories as Category[]) : defaultCategories,
-    accounts: Array.isArray(base.accounts) ? (base.accounts as Account[]) : defaultAccounts,
-    transactions: Array.isArray(base.transactions) ? (base.transactions as Transaction[]) : [],
-    exchangeRates: Array.isArray(base.exchangeRates) ? (base.exchangeRates as ExchangeRate[]) : [],
-    settings: migrateSettings(base.settings),
-    lastUpdated: typeof base.lastUpdated === 'string' ? base.lastUpdated : new Date().toISOString(),
-  };
-};
-
-// Actions
 export type Action =
   | { type: 'SET_DATA'; payload: LocalStorageData }
   | { type: 'ADD_CATEGORY'; payload: Category }
@@ -159,192 +45,84 @@ export type Action =
   | { type: 'UPDATE_SETTINGS'; payload: Partial<AppSettings> }
   | { type: 'UPDATE_RATES'; payload: ExchangeRate[] };
 
-// Reducer
+const bump = (version?: number) => (version || 1) + 1;
+
 const appReducer = (state: LocalStorageData, action: Action): LocalStorageData => {
-  const newState = { ...state, lastUpdated: new Date().toISOString() };
+  if (action.type === 'SET_DATA') return action.payload;
+  const next = { ...state, lastUpdated: new Date().toISOString() };
   switch (action.type) {
-    case 'SET_DATA':
-      return action.payload;
-    case 'ADD_CATEGORY':
-      return { ...newState, categories: [...state.categories, action.payload] };
-    case 'UPDATE_CATEGORY':
-      return {
-        ...newState,
-        categories: state.categories.map(c => c.id === action.payload.id ? { ...c, ...action.payload.category } : c),
-      };
-    case 'DELETE_CATEGORY':
-      return {
-        ...newState,
-        categories: state.categories.filter(c => c.id !== action.payload),
-      };
-    case 'ADD_ACCOUNT':
-      return { ...newState, accounts: [...state.accounts, action.payload] };
-    case 'UPDATE_ACCOUNT':
-      return {
-        ...newState,
-        accounts: state.accounts.map(a => a.id === action.payload.id ? { ...a, ...action.payload.account } : a),
-      };
-    case 'DELETE_ACCOUNT':
-      return {
-        ...newState,
-        accounts: state.accounts.filter(a => a.id !== action.payload),
-      };
+    case 'ADD_CATEGORY': return { ...next, categories: [...state.categories, { ...action.payload, version: 1 }] };
+    case 'UPDATE_CATEGORY': return { ...next, categories: state.categories.map(c => c.id === action.payload.id ? { ...c, ...action.payload.category, version: bump(c.version) } : c) };
+    case 'DELETE_CATEGORY': return { ...next, categories: state.categories.filter(c => c.id !== action.payload) };
+    case 'ADD_ACCOUNT': return { ...next, accounts: [...state.accounts, { ...action.payload, version: 1 }] };
+    case 'UPDATE_ACCOUNT': return { ...next, accounts: state.accounts.map(a => a.id === action.payload.id ? { ...a, ...action.payload.account, version: bump(a.version) } : a) };
+    case 'DELETE_ACCOUNT': return { ...next, accounts: state.accounts.filter(a => a.id !== action.payload) };
     case 'ADD_TRANSACTION': {
-      const tx = action.payload;
-      const updatedAccounts = applyTransactionBalance(state.accounts, tx, 1);
-      return { ...newState, transactions: [...state.transactions, tx], accounts: updatedAccounts };
+      const tx = { ...action.payload, version: 1 };
+      return { ...next, transactions: [...state.transactions, tx], accounts: applyTransactionBalance(state.accounts, tx, 1) };
     }
-      
     case 'UPDATE_TRANSACTION': {
       const oldTx = state.transactions.find(t => t.id === action.payload.id);
-      if (!oldTx) return newState;
-      
-      const newTxData = { ...oldTx, ...action.payload.transaction };
-      
-      const revertedAccounts = applyTransactionBalance(state.accounts, oldTx, -1);
-      const tempAccounts = applyTransactionBalance(revertedAccounts, newTxData, 1);
-      
-      return {
-        ...newState,
-        transactions: state.transactions.map(t => t.id === action.payload.id ? newTxData : t),
-        accounts: tempAccounts
-      };
+      if (!oldTx) return next;
+      const tx = { ...oldTx, ...action.payload.transaction, version: bump(oldTx.version) };
+      return { ...next, transactions: state.transactions.map(t => t.id === tx.id ? tx : t), accounts: applyTransactionBalance(applyTransactionBalance(state.accounts, oldTx, -1), tx, 1) };
     }
-
     case 'DELETE_TRANSACTION': {
-       const delTx = state.transactions.find(t => t.id === action.payload);
-       if (!delTx) return newState;
-       
-       const delAccounts = applyTransactionBalance(state.accounts, delTx, -1);
-       
-       return {
-         ...newState,
-         transactions: state.transactions.filter(t => t.id !== action.payload),
-         accounts: delAccounts
-       };
+      const tx = state.transactions.find(t => t.id === action.payload);
+      return tx ? { ...next, transactions: state.transactions.filter(t => t.id !== tx.id), accounts: applyTransactionBalance(state.accounts, tx, -1) } : next;
     }
-
-    case 'UPDATE_SETTINGS':
-      return { ...newState, settings: { ...state.settings, ...action.payload } };
-    case 'UPDATE_RATES':
-      return { ...newState, exchangeRates: action.payload };
-    default:
-      return state;
+    case 'UPDATE_SETTINGS': return { ...next, settings: { ...state.settings, ...action.payload, version: bump(state.settings.version) } };
+    case 'UPDATE_RATES': return { ...next, exchangeRates: action.payload };
   }
 };
 
-// Context
 interface AppContextType extends LocalStorageData {
   dispatch: React.Dispatch<Action>;
-  importData: (data: LocalStorageData) => void;
+  syncError: string | null;
 }
-
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
+const withVersion = (action: Action, state: LocalStorageData): Action => {
+  if (action.type === 'UPDATE_CATEGORY') return { ...action, payload: { ...action.payload, category: { ...action.payload.category, version: state.categories.find(x => x.id === action.payload.id)?.version } } };
+  if (action.type === 'DELETE_CATEGORY') return { ...action, payload: JSON.stringify({ id: action.payload, version: state.categories.find(x => x.id === action.payload)?.version }) };
+  if (action.type === 'UPDATE_ACCOUNT') return { ...action, payload: { ...action.payload, account: { ...action.payload.account, version: state.accounts.find(x => x.id === action.payload.id)?.version } } };
+  if (action.type === 'DELETE_ACCOUNT') return { ...action, payload: JSON.stringify({ id: action.payload, version: state.accounts.find(x => x.id === action.payload)?.version }) };
+  if (action.type === 'UPDATE_TRANSACTION') return { ...action, payload: { ...action.payload, transaction: { ...action.payload.transaction, version: state.transactions.find(x => x.id === action.payload.id)?.version } } };
+  if (action.type === 'DELETE_TRANSACTION') return { ...action, payload: JSON.stringify({ id: action.payload, version: state.transactions.find(x => x.id === action.payload)?.version }) };
+  if (action.type === 'UPDATE_SETTINGS') return { ...action, payload: { ...action.payload, version: state.settings.version } };
+  return action;
+};
+
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [state, dispatch] = useReducer(appReducer, initialState, (initial) => {
-    const stored = localStorage.getItem('personal_accounting_data');
-    if (!stored) return initial;
-    try {
-      return migrateState(JSON.parse(stored));
-    } catch {
-      return initial;
-    }
-  });
-  const initialSyncDone = useRef(false);
-  const suppressNextUpload = useRef(false);
-  const uploadTimeout = useRef<number | null>(null);
+  const [state, localDispatch] = useReducer(appReducer, initialState);
+  const [loading, setLoading] = useState(true);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const stateRef = useRef(state);
+  const queue = useRef(Promise.resolve());
+  useEffect(() => { stateRef.current = state; }, [state]);
 
-  useEffect(() => {
-    localStorage.setItem('personal_accounting_data', JSON.stringify(state));
-  }, [state]);
+  const reload = useCallback(async () => {
+    const data = await fetchData();
+    stateRef.current = data;
+    localDispatch({ type: 'SET_DATA', payload: data });
+    setSyncError(null);
+  }, []);
+  useEffect(() => { reload().catch(error => setSyncError(error instanceof Error ? error.message : String(error))).finally(() => setLoading(false)); }, [reload]);
 
-  useEffect(() => {
-    const config = state.settings.r2Config;
-    if (!config?.enabled || !config.url || !config.app || !config.token) {
-      initialSyncDone.current = true;
-      return;
-    }
-    initialSyncDone.current = false;
-    let cancelled = false;
-    const runSync = async () => {
-      try {
-        const remoteData = await R2SyncManager.download<LocalStorageData>(config, 'backup');
-        if (cancelled || !remoteData) return;
-        const remoteUpdated = remoteData.lastUpdated;
-        const localUpdated = state.lastUpdated;
-        if (!localUpdated || (remoteUpdated && new Date(remoteUpdated) > new Date(localUpdated))) {
-          suppressNextUpload.current = true;
-          dispatch({ type: 'SET_DATA', payload: remoteData });
-        }
-      } catch (e) {
-        console.warn('R2 initial sync failed:', e);
-      } finally {
-        if (!cancelled) initialSyncDone.current = true;
-      }
-    };
-    runSync();
-    return () => {
-      cancelled = true;
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.settings.r2Config?.enabled, state.settings.r2Config?.url, state.settings.r2Config?.app, state.settings.r2Config?.token]);
+  const dispatch = useCallback((action: Action) => {
+    if (action.type === 'SET_DATA') { stateRef.current = action.payload; localDispatch(action); return; }
+    const enriched = withVersion(action, stateRef.current);
+    stateRef.current = appReducer(stateRef.current, action);
+    localDispatch(action);
+    queue.current = queue.current.then(async () => { await sendAction(enriched); }).catch(async error => {
+      setSyncError(error instanceof Error ? error.message : String(error));
+      await reload().catch(() => undefined);
+    });
+  }, [reload]);
 
-  useEffect(() => {
-    const config = state.settings.r2Config;
-    if (!config?.enabled || !config.url || !config.app || !config.token) {
-      return;
-    }
-    let cancelled = false;
-    const syncConfig = async () => {
-      try {
-        const remoteConfig = await R2SyncManager.downloadJson<Partial<AppSettings>>(config, 'config');
-        if (cancelled || !remoteConfig) return;
-        const merged = migrateSettings({ ...state.settings, ...remoteConfig, r2Config: state.settings.r2Config });
-        const currentComparable = JSON.stringify({ ...state.settings, r2Config: undefined });
-        const remoteComparable = JSON.stringify({ ...merged, r2Config: undefined });
-        if (currentComparable !== remoteComparable) {
-          dispatch({ type: 'UPDATE_SETTINGS', payload: { ...merged, r2Config: state.settings.r2Config } });
-        }
-      } catch (e) {
-        console.warn('R2 config sync failed:', e);
-      }
-    };
-    syncConfig();
-    return () => {
-      cancelled = true;
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.settings.r2Config?.enabled, state.settings.r2Config?.url, state.settings.r2Config?.app, state.settings.r2Config?.token]);
-
-  useEffect(() => {
-    const config = state.settings.r2Config;
-    if (!initialSyncDone.current) return;
-    if (!config?.enabled || !config.url || !config.app || !config.token) return;
-    if (suppressNextUpload.current) {
-      suppressNextUpload.current = false;
-      return;
-    }
-    if (uploadTimeout.current) window.clearTimeout(uploadTimeout.current);
-    uploadTimeout.current = window.setTimeout(() => {
-      R2SyncManager.upload(state, config, 'backup').catch((e) => {
-        console.warn('R2 upload failed:', e);
-      });
-    }, 1200);
-    return () => {
-      if (uploadTimeout.current) window.clearTimeout(uploadTimeout.current);
-    };
-  }, [state]);
-
-  const importData = (data: LocalStorageData) => {
-    dispatch({ type: 'SET_DATA', payload: data });
-  };
-
-  return (
-    <AppContext.Provider value={{ ...state, dispatch, importData }}>
-      {children}
-    </AppContext.Provider>
-  );
+  if (loading) return <div className="min-h-screen grid place-items-center text-gray-500">正在加载账本…</div>;
+  if (syncError && state.categories.length === 0) return <div className="min-h-screen grid place-items-center p-6 text-red-600">无法加载账本：{syncError}</div>;
+  return <AppContext.Provider value={{ ...state, dispatch, syncError }}>{children}</AppContext.Provider>;
 };
 
 export const useAppContext = () => {

@@ -4,18 +4,16 @@ import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
 import { Modal } from '../components/ui/Modal';
-import { R2SyncManager } from '../utils/r2Sync';
 import { AppSettings, LocalStorageData } from '../types';
-import { Upload, Download, Save, Loader2 } from 'lucide-react';
+import { Download, Save, Loader2, Database } from 'lucide-react';
 import { useI18n } from '../i18n';
 import { getDefaultTemplates } from '../utils/promptTemplates';
 import { checkHealth } from '../utils/aiClient';
 import { AICallLog, readRecentLogs } from '../utils/aiLogs';
 
 export const StoragePage: React.FC = () => {
-  const { settings, dispatch, ...appData } = useAppContext();
+  const { settings, dispatch, syncError } = useAppContext();
   const { t } = useI18n();
-  const [loading, setLoading] = useState(false);
   const [aiChecking, setAiChecking] = useState(false);
   const [aiStatus, setAiStatus] = useState<'idle' | 'ok' | 'fail'>('idle');
   const [aiStatusMessage, setAiStatusMessage] = useState('');
@@ -23,6 +21,7 @@ export const StoragePage: React.FC = () => {
   const [logsOpen, setLogsOpen] = useState(false);
   const [apiKeyGuideOpen, setApiKeyGuideOpen] = useState(false);
   const [logs, setLogs] = useState<AICallLog[]>([]);
+  const [legacyData, setLegacyData] = useState<LocalStorageData | null>(null);
 
   const [formData, setFormData] = useState<AppSettings>(() => ({
     ...settings,
@@ -31,12 +30,6 @@ export const StoragePage: React.FC = () => {
       templates: settings.aiConfig?.templates?.text && settings.aiConfig?.templates?.image
         ? settings.aiConfig.templates
         : getDefaultTemplates(),
-    },
-    r2Config: settings.r2Config || {
-      enabled: false,
-      app: '',
-      url: '',
-      token: '',
     },
   }));
 
@@ -49,91 +42,28 @@ export const StoragePage: React.FC = () => {
           ? settings.aiConfig.templates
           : getDefaultTemplates(),
       },
-      r2Config: settings.r2Config || {
-        enabled: false,
-        app: '',
-        url: '',
-        token: '',
-      },
     });
   }, [settings]);
 
-  const buildConfigPayload = (data: AppSettings) => {
-    const { r2Config, ...rest } = data;
-    void r2Config;
-    return rest;
-  };
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('personal_accounting_data');
+      setLegacyData(raw ? JSON.parse(raw) as LocalStorageData : null);
+    } catch { setLegacyData(null); }
+  }, []);
 
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     dispatch({ type: 'UPDATE_SETTINGS', payload: formData });
-    try {
-      if (formData.r2Config?.enabled && formData.r2Config?.url && formData.r2Config?.app && formData.r2Config?.token) {
-        await R2SyncManager.uploadJson(buildConfigPayload(formData), formData.r2Config, 'config');
-      }
-      setMessage({ type: 'success', text: t('settings.saved') });
-    } catch (error: unknown) {
-      const messageText = error instanceof Error ? error.message : String(error);
-      setMessage({ type: 'error', text: `${t('settings.r2.fail')}: ${messageText}` });
-    }
+    setMessage({ type: 'success', text: t('settings.saved') });
     setTimeout(() => setMessage(null), 3000);
   };
 
-  const handleUpload = async () => {
-    if (!formData.r2Config?.enabled || !formData.r2Config?.url || !formData.r2Config?.app || !formData.r2Config?.token) {
-      setMessage({ type: 'error', text: t('settings.r2.fail') });
-      return;
-    }
-    setLoading(true);
-    try {
-      const dataToUpload: LocalStorageData = {
-        ...appData,
-        settings: formData, // Use latest settings
-      };
-      await R2SyncManager.upload(dataToUpload, formData.r2Config, 'backup');
-      setMessage({ type: 'success', text: t('settings.r2.success') });
-    } catch (error: unknown) {
-      const messageText = error instanceof Error ? error.message : String(error);
-      setMessage({ type: 'error', text: `${t('settings.r2.fail')}: ${messageText}` });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleDownload = async () => {
-    if (!formData.r2Config?.enabled || !formData.r2Config?.url || !formData.r2Config?.app || !formData.r2Config?.token) {
-      setMessage({ type: 'error', text: t('settings.r2.fail') });
-      return;
-    }
-    setLoading(true);
-    try {
-      const data = await R2SyncManager.download<LocalStorageData>(formData.r2Config, 'backup');
-      if (data) {
-        const currentTimestamp = appData.lastUpdated;
-        if (data.lastUpdated && new Date(data.lastUpdated) <= new Date(currentTimestamp)) {
-          if (!confirm(t('settings.r2.overwriteConfirm'))) {
-            setLoading(false);
-            return;
-          }
-        }
-        dispatch({ type: 'SET_DATA', payload: data });
-        setFormData({
-          ...data.settings,
-          aiConfig: {
-            ...data.settings.aiConfig,
-            templates: data.settings.aiConfig?.templates?.text && data.settings.aiConfig?.templates?.image
-              ? data.settings.aiConfig.templates
-              : getDefaultTemplates(),
-          },
-        });
-      }
-      setMessage({ type: 'success', text: t('settings.r2.success') });
-    } catch (error: unknown) {
-      const messageText = error instanceof Error ? error.message : String(error);
-      setMessage({ type: 'error', text: `${t('settings.r2.fail')}: ${messageText}` });
-    } finally {
-      setLoading(false);
-    }
+  const handleBackup = () => {
+    if (!legacyData) return;
+    const url = URL.createObjectURL(new Blob([JSON.stringify(legacyData, null, 2)], { type: 'application/json' }));
+    const link = document.createElement('a'); link.href = url; link.download = `personal-accounting-local-${new Date().toISOString().slice(0, 10)}.json`; link.click();
+    URL.revokeObjectURL(url);
   };
 
   const handleCheckAI = async () => {
@@ -167,61 +97,18 @@ export const StoragePage: React.FC = () => {
           {message.text}
         </div>
       )}
+      {syncError && <div className="p-4 rounded-md bg-amber-50 text-amber-800">云端保存暂时失败，页面已重新同步：{syncError}</div>}
 
       <Card>
         <CardHeader>
-          <CardTitle>{t('settings.r2.title')}</CardTitle>
+          <CardTitle>数据存储与本地迁移</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex items-center space-x-2">
-            <input
-              type="checkbox"
-              id="r2Enabled"
-              checked={formData.r2Config?.enabled || false}
-              onChange={e => setFormData({ ...formData, r2Config: { ...formData.r2Config!, enabled: e.target.checked } })}
-              className="rounded border-gray-300 text-green-600 focus:ring-green-600"
-            />
-            <label htmlFor="r2Enabled" className="text-sm font-medium text-gray-700">{t('settings.r2.enable')}</label>
-          </div>
-          <div className="grid gap-4 md:grid-cols-2">
-            <Input
-              label={t('settings.r2.app')}
-              value={formData.r2Config?.app || ''}
-              onChange={e => setFormData({ 
-                ...formData, 
-                r2Config: { ...formData.r2Config!, app: e.target.value } 
-              })}
-              placeholder="personal-accounting"
-            />
-            <Input
-              label={t('settings.r2.url')}
-              value={formData.r2Config?.url || ''}
-              onChange={e => setFormData({ 
-                ...formData, 
-                r2Config: { ...formData.r2Config!, url: e.target.value } 
-              })}
-              placeholder="https://your-r2-gateway"
-            />
-          </div>
-          <Input
-            label={t('settings.r2.token')}
-            type="password"
-            value={formData.r2Config?.token || ''}
-            onChange={e => setFormData({ 
-              ...formData, 
-              r2Config: { ...formData.r2Config!, token: e.target.value } 
-            })}
-          />
-          <div className="grid gap-4 md:grid-cols-2">
-            <Button onClick={handleUpload} disabled={loading || !formData.r2Config?.enabled} className="w-full">
-              {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
-              {t('settings.r2.syncNow')}
-            </Button>
-            <Button onClick={handleDownload} disabled={loading || !formData.r2Config?.enabled} variant="secondary" className="w-full">
-              {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
-              {t('settings.r2.pullLatest')}
-            </Button>
-          </div>
+          <div className="flex gap-3 rounded-md bg-green-50 p-4 text-sm text-green-900"><Database className="h-5 w-5 shrink-0" /><span>当前账号的数据保存在 Cloudflare D1 中。金额在数据库中统一以“分”的整数保存，页面按两位小数显示。</span></div>
+          {legacyData ? <>
+            <p className="text-sm text-gray-600">检测到本浏览器的旧账本：{legacyData.transactions?.length || 0} 条记录、{legacyData.accounts?.length || 0} 个账户、{legacyData.categories?.length || 0} 个分类。出于数据安全考虑，只有管理员能为指定用户导入。请下载备份后交由管理员在独立后台导入。</p>
+            <Button type="button" variant="secondary" onClick={handleBackup}><Download className="mr-2 h-4 w-4" />下载本地备份</Button>
+          </> : <p className="text-sm text-gray-500">未检测到可导入的旧版浏览器账本。</p>}
         </CardContent>
       </Card>
 

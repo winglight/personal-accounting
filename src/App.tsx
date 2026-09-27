@@ -10,14 +10,23 @@ import { StoragePage } from './pages/StoragePage';
 import { RecordsPage } from './pages/RecordsPage';
 import { I18nProvider } from './i18n';
 import { useAppContext } from './contexts/AppContext';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { AuthPage } from './pages/AuthPage';
+import { AdminPage } from './pages/AdminPage';
 
 function App() {
+  if (window.location.pathname.startsWith('/admin')) return <AdminPage />;
   return (
-    <AppProvider>
-      <AppContent />
-    </AppProvider>
+    <AuthProvider><AuthGate /></AuthProvider>
   );
 }
+
+const AuthGate: React.FC = () => {
+  const { user, loading } = useAuth();
+  if (loading) return <div className="min-h-screen grid place-items-center text-gray-500">正在检查登录状态…</div>;
+  if (!user) return <AuthPage />;
+  return <AppProvider><AppContent /></AppProvider>;
+};
 
 export default App;
 

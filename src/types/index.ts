@@ -5,6 +5,7 @@ export interface Category {
   parentId?: string; // 一级分类为空，二级分类为父级ID
   icon?: string;
   sortOrder: number;
+  version?: number;
 }
 
 export interface Account {
@@ -16,6 +17,7 @@ export interface Account {
   isMain: boolean; // 主账户（人民币）
   exchangeRate?: number; // 对人民币汇率
   color?: string;
+  version?: number;
 }
 
 export interface Transaction {
@@ -41,6 +43,7 @@ export interface Transaction {
   };
   createdAt: string;
   updatedAt: string;
+  version?: number;
 }
 
 export interface ExchangeRate {
@@ -64,12 +67,7 @@ export interface AppSettings {
   };
   mainCurrency: string; // 主货币，默认为CNY
   lastSyncTime?: string;
-  r2Config?: {
-    enabled: boolean;
-    app: string;
-    url: string;
-    token: string;
-  };
+  version?: number;
 }
 
 export interface LocalStorageData {
@@ -79,6 +77,14 @@ export interface LocalStorageData {
   exchangeRates: ExchangeRate[];
   settings: AppSettings;
   lastUpdated: string;
+}
+
+export interface ImportResult {
+  duplicate: boolean;
+  categories: number;
+  accounts: number;
+  transactions: number;
+  exchangeRates: number;
 }
 
 export interface CompressedDataPackage {
