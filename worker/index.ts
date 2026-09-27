@@ -156,11 +156,11 @@ async function ensureDefaults(db: D1Database, userId: string) {
   await db.batch(statements);
 }
 
-const minor = (value: unknown, field = '金额') => {
+const minor = (value: unknown, field = '金额', allowNegative = false) => {
   const number = typeof value === 'number' ? value : Number(value);
   const integer = Math.round(number * 100);
-  if (!Number.isFinite(number) || number < 0 || !Number.isSafeInteger(integer) || Math.abs(number - integer / 100) > 1e-9) {
-    throw new Error(`${field}必须是最多两位小数的非负数`);
+  if (!Number.isFinite(number) || (!allowNegative && number < 0) || !Number.isSafeInteger(integer) || Math.abs(number - integer / 100) > 1e-9) {
+    throw new Error(`${field}必须是最多两位小数${allowNegative ? '' : '的非负数'}`);
   }
   return integer;
 };
@@ -218,7 +218,7 @@ const accountStatement = (db: D1Database, userId: string, account: Json, timesta
   ? `INSERT INTO financial_accounts (user_id,id,name,type,currency,balance_minor,is_main,exchange_rate,color,version,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT(user_id,id) DO UPDATE SET name=excluded.name,type=excluded.type,currency=excluded.currency,balance_minor=excluded.balance_minor,is_main=excluded.is_main,exchange_rate=excluded.exchange_rate,color=excluded.color,version=excluded.version,updated_at=excluded.updated_at`
   : 'INSERT INTO financial_accounts (user_id,id,name,type,currency,balance_minor,is_main,exchange_rate,color,version,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)'
-).bind(userId, account.id, String(account.name || '').trim(), account.type, String(account.currency || 'CNY').toUpperCase(), forcedBalance ?? minor(account.balance || 0, '账户余额'), bool(account.isMain), account.exchangeRate == null ? null : String(account.exchangeRate), account.color || null, Number(account.version || 1), account.createdAt || timestamp, timestamp);
+).bind(userId, account.id, String(account.name || '').trim(), account.type, String(account.currency || 'CNY').toUpperCase(), forcedBalance ?? minor(account.balance ?? 0, '账户余额', true), bool(account.isMain), account.exchangeRate == null ? null : String(account.exchangeRate), account.color || null, Number(account.version || 1), account.createdAt || timestamp, timestamp);
 
 const transactionStatement = (db: D1Database, userId: string, tx: Json, timestamp: string, upsert = false) => {
   if (!tx.accountId) throw new Error('请选择转出账户');
@@ -262,7 +262,7 @@ app.post('/api/actions', async c => {
     case 'UPDATE_ACCOUNT': {
       const old = await loadRow(db, 'financial_accounts', userId, action.payload.id); if (!old) return c.json({ error: '账户不存在' }, 404);
       const item = { id: old.id, name: old.name, type: old.type, currency: old.currency, balance: fromMinor(old.balance_minor), isMain: Boolean(old.is_main), exchangeRate: old.exchange_rate, color: old.color, ...action.payload.account };
-      result = await db.prepare('UPDATE financial_accounts SET name=?,type=?,currency=?,balance_minor=?,is_main=?,exchange_rate=?,color=?,version=version+1,updated_at=? WHERE user_id=? AND id=? AND version=?').bind(item.name, item.type, item.currency, minor(item.balance, '账户余额'), bool(item.isMain), item.exchangeRate == null ? null : String(item.exchangeRate), item.color || null, timestamp, userId, item.id, action.payload.account.version || old.version).run(); break;
+      result = await db.prepare('UPDATE financial_accounts SET name=?,type=?,currency=?,balance_minor=?,is_main=?,exchange_rate=?,color=?,version=version+1,updated_at=? WHERE user_id=? AND id=? AND version=?').bind(item.name, item.type, item.currency, minor(item.balance, '账户余额', true), bool(item.isMain), item.exchangeRate == null ? null : String(item.exchangeRate), item.color || null, timestamp, userId, item.id, action.payload.account.version || old.version).run(); break;
     }
     case 'DELETE_ACCOUNT': { const item = parseDelete(action.payload); result = await db.prepare('DELETE FROM financial_accounts WHERE user_id=? AND id=? AND version=?').bind(userId, item.id, item.version || -1).run(); break; }
     case 'ADD_TRANSACTION': {

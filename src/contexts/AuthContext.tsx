@@ -10,10 +10,21 @@ interface AuthContextValue {
   signOut: () => Promise<void>;
 }
 
+interface ClientSessionData {
+  user: {
+    id: string;
+    email: string;
+    name: string;
+  };
+}
+
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const session = authClient.useSession();
+  // better-auth cannot infer the server-side auth schema across the Worker bundle
+  // boundary, so its default React client may expose session.data as `never`.
+  const sessionData = session.data as ClientSessionData | null | undefined;
   const [error, setError] = useState<string | null>(null);
   const run = async (request: Promise<{ error?: { message?: string } | null }>) => {
     setError(null);
@@ -26,7 +37,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return true;
   };
   const value: AuthContextValue = {
-    user: session.data?.user ? { id: session.data.user.id, email: session.data.user.email, name: session.data.user.name } : null,
+    user: sessionData?.user ? { id: sessionData.user.id, email: sessionData.user.email, name: sessionData.user.name } : null,
     loading: session.isPending,
     error,
     signIn: (email, password) => run(authClient.signIn.email({ email, password })),
