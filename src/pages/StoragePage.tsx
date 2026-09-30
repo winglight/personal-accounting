@@ -4,8 +4,8 @@ import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
 import { Modal } from '../components/ui/Modal';
-import { AppSettings, LocalStorageData } from '../types';
-import { Download, Save, Loader2, Database } from 'lucide-react';
+import { AppSettings } from '../types';
+import { Save, Loader2 } from 'lucide-react';
 import { useI18n } from '../i18n';
 import { getDefaultTemplates } from '../utils/promptTemplates';
 import { checkHealth } from '../utils/aiClient';
@@ -21,8 +21,6 @@ export const StoragePage: React.FC = () => {
   const [logsOpen, setLogsOpen] = useState(false);
   const [apiKeyGuideOpen, setApiKeyGuideOpen] = useState(false);
   const [logs, setLogs] = useState<AICallLog[]>([]);
-  const [legacyData, setLegacyData] = useState<LocalStorageData | null>(null);
-
   const [formData, setFormData] = useState<AppSettings>(() => ({
     ...settings,
     aiConfig: {
@@ -45,25 +43,11 @@ export const StoragePage: React.FC = () => {
     });
   }, [settings]);
 
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem('personal_accounting_data');
-      setLegacyData(raw ? JSON.parse(raw) as LocalStorageData : null);
-    } catch { setLegacyData(null); }
-  }, []);
-
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     dispatch({ type: 'UPDATE_SETTINGS', payload: formData });
     setMessage({ type: 'success', text: t('settings.saved') });
     setTimeout(() => setMessage(null), 3000);
-  };
-
-  const handleBackup = () => {
-    if (!legacyData) return;
-    const url = URL.createObjectURL(new Blob([JSON.stringify(legacyData, null, 2)], { type: 'application/json' }));
-    const link = document.createElement('a'); link.href = url; link.download = `personal-accounting-local-${new Date().toISOString().slice(0, 10)}.json`; link.click();
-    URL.revokeObjectURL(url);
   };
 
   const handleCheckAI = async () => {
@@ -98,19 +82,6 @@ export const StoragePage: React.FC = () => {
         </div>
       )}
       {syncError && <div className="p-4 rounded-md bg-amber-50 text-amber-800">云端保存暂时失败，页面已重新同步：{syncError}</div>}
-
-      <Card>
-        <CardHeader>
-          <CardTitle>数据存储与本地迁移</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex gap-3 rounded-md bg-green-50 p-4 text-sm text-green-900"><Database className="h-5 w-5 shrink-0" /><span>当前账号的数据保存在 Cloudflare D1 中。金额在数据库中统一以“分”的整数保存，页面按两位小数显示。</span></div>
-          {legacyData ? <>
-            <p className="text-sm text-gray-600">检测到本浏览器的旧账本：{legacyData.transactions?.length || 0} 条记录、{legacyData.accounts?.length || 0} 个账户、{legacyData.categories?.length || 0} 个分类。出于数据安全考虑，只有管理员能为指定用户导入。请下载备份后交由管理员在独立后台导入。</p>
-            <Button type="button" variant="secondary" onClick={handleBackup}><Download className="mr-2 h-4 w-4" />下载本地备份</Button>
-          </> : <p className="text-sm text-gray-500">未检测到可导入的旧版浏览器账本。</p>}
-        </CardContent>
-      </Card>
 
       <form onSubmit={handleSaveSettings}>
         <Card>
