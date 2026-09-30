@@ -11,7 +11,7 @@ import {
   Tooltip,
   Legend,
 } from 'chart.js';
-import { eachDayOfInterval, endOfMonth, format, isSameDay, parseISO, startOfMonth } from 'date-fns';
+import { eachDayOfInterval, endOfMonth, format, isValid, parseISO, startOfMonth, startOfWeek, startOfYear } from 'date-fns';
 import { enUS, zhCN } from 'date-fns/locale';
 import { useI18n } from '../i18n';
 
@@ -22,6 +22,17 @@ const COLORS = [
   '#3b82f6', '#6366f1', '#a855f7', '#ec4899', '#64748b',
 ];
 
+type Period = 'day' | 'week' | 'month' | 'year';
+
+const periodStart = (date: Date, period: Period) => {
+  if (period === 'week') return startOfWeek(date, { weekStartsOn: 1 });
+  if (period === 'month') return startOfMonth(date);
+  if (period === 'year') return startOfYear(date);
+  return date;
+};
+
+const periodKey = (date: Date, period: Period) => format(periodStart(date, period), 'yyyy-MM-dd');
+
 export const StatisticsPage: React.FC = () => {
   const { transactions, categories } = useAppContext();
   const { t, language } = useI18n();
@@ -30,6 +41,7 @@ export const StatisticsPage: React.FC = () => {
     end: format(endOfMonth(new Date()), 'yyyy-MM-dd'),
   });
   const [visibleSeries, setVisibleSeries] = useState({ income: true, expense: true });
+  const [period, setPeriod] = useState<Period>('day');
   const [categoryType, setCategoryType] = useState<'expense' | 'income'>('expense');
   const [primaryCategoryId, setPrimaryCategoryId] = useState('');
 
@@ -41,17 +53,33 @@ export const StatisticsPage: React.FC = () => {
     }
   }, [dateRange]);
 
+  const periods = useMemo(() => [...new Map(days.map(day => [periodKey(day, period), periodStart(day, period)])).entries()], [days, period]);
+
   const labels = useMemo(() => {
     const locale = language === 'zh' ? zhCN : enUS;
-    return days.map(day => format(day, 'MMM dd', { locale }));
-  }, [days, language]);
+    return periods.map(([, date]) => format(date, period === 'day' ? 'MMM dd' : period === 'week' ? 'yyyy-MM-dd' : period === 'month' ? 'yyyy-MM' : 'yyyy', { locale }));
+  }, [periods, period, language]);
+
+  const groupedTransactions = useMemo(() => {
+    const groups = new Map<string, typeof transactions>();
+    for (const [key] of periods) groups.set(key, []);
+    for (const tx of transactions) {
+      const date = parseISO(tx.date);
+      if (!isValid(date)) continue;
+      const day = format(date, 'yyyy-MM-dd');
+      if (day < dateRange.start || day > dateRange.end) continue;
+      const group = groups.get(periodKey(date, period));
+      if (group) group.push(tx);
+    }
+    return groups;
+  }, [dateRange, period, periods, transactions]);
 
   const trendData = useMemo(() => ({
     labels,
     datasets: [
       {
         label: t('accounting.income'),
-        data: days.map(day => transactions.filter(tx => tx.type === 'income' && isSameDay(parseISO(tx.date), day)).reduce((sum, tx) => sum + tx.amount, 0)),
+        data: periods.map(([key]) => (groupedTransactions.get(key) || []).filter(tx => tx.type === 'income').reduce((sum, tx) => sum + tx.amount, 0)),
         borderColor: '#22c55e',
         backgroundColor: 'rgba(34, 197, 94, 0.5)',
         hidden: !visibleSeries.income,
@@ -59,14 +87,14 @@ export const StatisticsPage: React.FC = () => {
       },
       {
         label: t('accounting.expense'),
-        data: days.map(day => transactions.filter(tx => tx.type === 'expense' && isSameDay(parseISO(tx.date), day)).reduce((sum, tx) => sum + tx.amount, 0)),
+        data: periods.map(([key]) => (groupedTransactions.get(key) || []).filter(tx => tx.type === 'expense').reduce((sum, tx) => sum + tx.amount, 0)),
         borderColor: '#ef4444',
         backgroundColor: 'rgba(239, 68, 68, 0.5)',
         hidden: !visibleSeries.expense,
         tension: 0.3,
       },
     ],
-  }), [days, labels, transactions, visibleSeries, t]);
+  }), [periods, groupedTransactions, labels, visibleSeries, t]);
 
   const primaryCategories = useMemo(
     () => categories.filter(category => category.type === categoryType && !category.parentId),
@@ -81,9 +109,8 @@ export const StatisticsPage: React.FC = () => {
   const categoryData = useMemo(() => {
     const datasets = categorySeries.map((category, index) => ({
       label: category.name,
-      data: days.map(day => transactions
+      data: periods.map(([key]) => (groupedTransactions.get(key) || [])
         .filter(tx => tx.type === categoryType
-          && isSameDay(parseISO(tx.date), day)
           && (primaryCategoryId ? tx.subcategoryId === category.id : tx.categoryId === category.id))
         .reduce((sum, tx) => sum + tx.amount, 0)),
       backgroundColor: COLORS[index % COLORS.length],
@@ -93,11 +120,10 @@ export const StatisticsPage: React.FC = () => {
     if (primaryCategoryId) {
       datasets.push({
         label: t('statistics.uncategorized'),
-        data: days.map(day => transactions
+        data: periods.map(([key]) => (groupedTransactions.get(key) || [])
           .filter(tx => tx.type === categoryType
             && tx.categoryId === primaryCategoryId
-            && !tx.subcategoryId
-            && isSameDay(parseISO(tx.date), day))
+            && !tx.subcategoryId)
           .reduce((sum, tx) => sum + tx.amount, 0)),
         backgroundColor: COLORS[(categorySeries.length) % COLORS.length],
         borderRadius: 3,
@@ -105,7 +131,7 @@ export const StatisticsPage: React.FC = () => {
     }
 
     return { labels, datasets };
-  }, [categorySeries, categoryType, days, labels, primaryCategoryId, t, transactions]);
+  }, [categorySeries, categoryType, periods, groupedTransactions, labels, primaryCategoryId, t]);
 
   const chartOptions = {
     responsive: true,
@@ -120,6 +146,20 @@ export const StatisticsPage: React.FC = () => {
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">{t('page.statistics')}</h1>
+
+      <div className="inline-flex rounded-lg border border-gray-200 bg-white p-1 shadow-sm" role="group" aria-label={t('statistics.period')}>
+        {(['day', 'week', 'month', 'year'] as const).map(value => (
+          <button
+            key={value}
+            type="button"
+            aria-pressed={period === value}
+            onClick={() => setPeriod(value)}
+            className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${period === value ? 'bg-green-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+          >
+            {t(`statistics.period.${value}`)}
+          </button>
+        ))}
+      </div>
 
       <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 flex flex-wrap gap-4 items-end">
         <div>
@@ -170,7 +210,7 @@ export const StatisticsPage: React.FC = () => {
             </select>
           </div>
           <div className="text-sm font-medium text-gray-700">
-            {primaryCategoryId ? t('statistics.secondaryBreakdown') : t('statistics.primaryBreakdown')}
+            {t(primaryCategoryId ? 'statistics.secondaryBreakdown' : 'statistics.primaryBreakdown').replace('{period}', t(`statistics.period.${period}`))}
           </div>
         </div>
         <div className="h-96">

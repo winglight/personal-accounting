@@ -117,13 +117,13 @@ export const StoragePage: React.FC = () => {
           <CardHeader>
             <CardTitle>{t('settings.general')}</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="grid grid-cols-2 gap-4">
             <Input
               label={t('settings.mainCurrency')}
               value={formData.mainCurrency}
               onChange={e => setFormData({ ...formData, mainCurrency: e.target.value.toUpperCase() })}
             />
-            <div>
+            <div className="min-w-0">
               <label className="block text-sm font-medium text-gray-700 mb-1">{t('settings.language')}</label>
               <select
                 className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-600 focus:border-transparent"
@@ -153,12 +153,6 @@ export const StoragePage: React.FC = () => {
               <label htmlFor="aiEnabled" className="text-sm font-medium text-gray-700">{t('settings.ai.enable')}</label>
             </div>
             <Input
-              label={t('settings.ai.baseUrl')}
-              value={formData.aiConfig.apiUrl}
-              onChange={e => setFormData({ ...formData, aiConfig: { ...formData.aiConfig, apiUrl: e.target.value } })}
-              placeholder="https://open.bigmodel.cn/api/paas/v4/chat/completions"
-            />
-            <Input
               label={t('settings.ai.token')}
               type="password"
               value={formData.aiConfig.token}
@@ -171,18 +165,6 @@ export const StoragePage: React.FC = () => {
             >
               {t('settings.ai.freeKey')}
             </button>
-            <Input
-              label={t('settings.ai.textModel')}
-              value={formData.aiConfig.textModel}
-              onChange={e => setFormData({ ...formData, aiConfig: { ...formData.aiConfig, textModel: e.target.value } })}
-              placeholder="glm-5.3-flash"
-            />
-            <Input
-              label={t('settings.ai.imageModel')}
-              value={formData.aiConfig.imageModel}
-              onChange={e => setFormData({ ...formData, aiConfig: { ...formData.aiConfig, imageModel: e.target.value } })}
-              placeholder="glm-4.6v-flashx"
-            />
             <div className="grid gap-4 md:grid-cols-2">
               <Button type="button" variant="secondary" onClick={handleCheckAI} disabled={aiChecking}>
                 {aiChecking ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
@@ -195,29 +177,6 @@ export const StoragePage: React.FC = () => {
                 </div>
               )}
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{t('settings.ai.templateText')}</label>
-              <textarea
-                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-600 focus:border-transparent min-h-[160px]"
-                value={formData.aiConfig.templates.text}
-                onChange={e => setFormData({ ...formData, aiConfig: { ...formData.aiConfig, templates: { ...formData.aiConfig.templates, text: e.target.value } } })}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{t('settings.ai.templateImage')}</label>
-              <textarea
-                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-600 focus:border-transparent min-h-[160px]"
-                value={formData.aiConfig.templates.image}
-                onChange={e => setFormData({ ...formData, aiConfig: { ...formData.aiConfig, templates: { ...formData.aiConfig.templates, image: e.target.value } } })}
-              />
-            </div>
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => setFormData({ ...formData, aiConfig: { ...formData.aiConfig, templates: getDefaultTemplates() } })}
-            >
-              {t('settings.ai.templateReset')}
-            </Button>
           </CardContent>
         </Card>
 
