@@ -2,6 +2,8 @@
 
 基于 React 和 Cloudflare Workers 的个人记账应用。账号、分类、交易、附件、汇率和设置均按字段存入 D1 关系表；浏览器不再作为主数据源。
 
+> 2026-10-01 UI 改版的变更、回归覆盖、未验证项与应用步骤见 [真实项目 UI 改版交付与验证](docs/REDESIGN_IMPLEMENTATION.md)。
+
 ## 功能
 
 - Email 注册、登录和服务端 Cookie 会话

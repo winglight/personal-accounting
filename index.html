@@ -4,6 +4,31 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#eef3eb" />
+    <script>
+      // Apply before CSS or React paints; keep in sync with src/utils/theme.ts.
+      (() => {
+        var theme = 'forest';
+        var colors = { warm: '#f4f1ea', graphite: '#181a1d', forest: '#eef3eb', amber: '#fbf3e2', violet: '#f5f0f7' };
+        try {
+          var saved = localStorage.getItem('pa-accounting-theme');
+          if (saved !== null) {
+            theme = Object.prototype.hasOwnProperty.call(colors, saved) ? saved : 'forest';
+          } else {
+            var legacy = localStorage.getItem('theme');
+            if (legacy === 'light') theme = 'warm';
+            else if (legacy === 'dark') theme = 'graphite';
+          }
+        } catch (_) { /* The default also works without storage. */ }
+        var root = document.documentElement;
+        root.dataset.theme = theme;
+        root.classList.toggle('dark', theme === 'graphite');
+        root.classList.toggle('light', theme !== 'graphite');
+        root.style.colorScheme = theme === 'graphite' ? 'dark' : 'light';
+        root.style.backgroundColor = colors[theme];
+        document.querySelector('meta[name="theme-color"]').content = colors[theme];
+      })();
+    </script>
     <title>Personal Accounting</title>
     <script type="module">
       if (import.meta.hot?.on) {

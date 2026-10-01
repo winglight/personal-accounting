@@ -207,9 +207,9 @@ export const AccountsPage: React.FC = () => {
         </Card>
       )}
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="pa-account-grid">
         {accounts.map(account => (
-          <div key={account.id} className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm relative overflow-hidden">
+          <div key={account.id} className={`pa-account-card ${account.isMain ? 'pa-account-primary' : ''} bg-white rounded-lg border border-gray-200 p-4 shadow-sm relative overflow-hidden`}>
              {account.isMain && (
                <div className="absolute top-0 right-0 bg-green-100 text-green-800 text-xs px-2 py-1 rounded-bl-lg font-medium">{t('accounts.main')}</div>
              )}
@@ -234,10 +234,10 @@ export const AccountsPage: React.FC = () => {
                 >
                   <ArrowRightLeft className="h-4 w-4" />
                 </Button>
-                <Button variant="ghost" size="sm" onClick={() => handleEdit(account)}>
+                <Button variant="ghost" size="sm" onClick={() => handleEdit(account)} aria-label={`${t('common.edit')} ${account.name}`}>
                   <Edit2 className="h-4 w-4" />
                 </Button>
-                <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => handleDelete(account.id)}>
+                <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => handleDelete(account.id)} aria-label={`${t('common.delete')} ${account.name}`}>
                   <Trash2 className="h-4 w-4" />
                 </Button>
               </div>

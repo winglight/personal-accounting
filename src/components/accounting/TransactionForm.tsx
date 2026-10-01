@@ -69,7 +69,7 @@ export const TransactionForm: React.FC = () => {
   };
 
   return (
-    <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+    <div className="pa-transaction-form bg-white p-4 rounded-lg shadow-sm border border-gray-200">
       <div className="flex space-x-2 mb-4">
         <button
           type="button"

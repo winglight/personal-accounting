@@ -1,23 +1,23 @@
-import React from 'react';
+import { Link, useLocation } from 'react-router-dom';
+import { LogOut, Plus, Sparkles, ChevronRight } from 'lucide-react';
 import { useI18n } from '../../i18n';
-import logo from '../../assets/logo.svg';
-import { LogOut } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { ThemePicker } from '../ui/ThemePicker';
 
-export const AppHeader: React.FC = () => {
-  const { t } = useI18n();
-  const { user, signOut } = useAuth();
-
+export function AppHeader() {
+  const { t, language } = useI18n();
+  const { signOut } = useAuth();
+  const { pathname } = useLocation();
+  const labels: Record<string, string> = { '/': 'nav.accounting', '/records': 'nav.records', '/statistics': 'nav.statistics', '/accounts': 'nav.accounts', '/categories': 'nav.categories', '/storage': 'nav.storage' };
   return (
-    <div className="flex items-center gap-3 mb-6">
-      <img src={logo} alt={t('app.name')} className="h-10 w-10 rounded-lg" />
-      <div className="leading-tight">
-        <div className="text-lg font-semibold text-gray-900">{t('app.name')}</div>
+    <header className="pa-topbar">
+      <div className="pa-breadcrumb"><span>{language === 'zh' ? '我的账本' : 'My ledger'}</span><ChevronRight size={13} /><strong>{t(labels[pathname] || 'nav.accounting')}</strong></div>
+      <div className="pa-top-actions">
+        <ThemePicker language={language} />
+        <Link className="pa-entry-link" to="/?mode=ai" aria-label={language === 'zh' ? 'AI 记账' : 'AI entry'}><Sparkles size={16} /><span>AI {language === 'zh' ? '记账' : 'entry'}</span></Link>
+        <Link className="pa-entry-link pa-entry-primary" to="/?mode=manual" aria-label={language === 'zh' ? '手工记账' : 'Manual entry'}><Plus size={17} /><span>{language === 'zh' ? '手工记账' : 'Manual entry'}</span></Link>
+        <button type="button" onClick={() => void signOut()} className="pa-icon-button" title={language === 'zh' ? '退出登录' : 'Sign out'} aria-label={language === 'zh' ? '退出登录' : 'Sign out'}><LogOut size={17} /></button>
       </div>
-      <div className="ml-auto flex items-center gap-2 min-w-0">
-        <span className="hidden sm:block max-w-48 truncate text-xs text-gray-500">{user?.email}</span>
-        <button type="button" onClick={() => void signOut()} className="rounded-md p-2 text-gray-500 hover:bg-gray-100" title="退出登录" aria-label="退出登录"><LogOut className="h-4 w-4" /></button>
-      </div>
-    </div>
+    </header>
   );
-};
+}

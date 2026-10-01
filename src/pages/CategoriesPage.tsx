@@ -126,7 +126,7 @@ export const CategoriesPage: React.FC = () => {
         </Card>
       )}
 
-      <div className="space-y-4">
+      <div className="pa-category-grid">
         {parents.map(parent => (
           <CategoryItem 
             key={parent.id} 
@@ -147,23 +147,23 @@ const CategoryItem: React.FC<{
   onEdit: (c: Category) => void;
   onDelete: (id: string) => void;
 }> = ({ category, allCategories, onEdit, onDelete }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(true);
   const children = allCategories.filter(c => c.parentId === category.id);
 
   return (
     <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
       <div className="flex items-center justify-between p-4 hover:bg-gray-50">
-        <div className="flex items-center space-x-2 cursor-pointer flex-1" onClick={() => setIsExpanded(!isExpanded)}>
+        <button type="button" className="flex items-center space-x-2 cursor-pointer flex-1 text-left" aria-expanded={isExpanded} onClick={() => setIsExpanded(!isExpanded)}>
           {children.length > 0 ? (
              isExpanded ? <ChevronDown className="h-4 w-4 text-gray-400" /> : <ChevronRight className="h-4 w-4 text-gray-400" />
           ) : <span className="w-4" />}
           <span className="font-medium">{category.name}</span>
-        </div>
+        </button>
         <div className="flex space-x-1">
-          <Button variant="ghost" size="sm" onClick={() => onEdit(category)}>
+          <Button variant="ghost" size="sm" onClick={() => onEdit(category)} aria-label={`编辑 ${category.name}`}>
             <Edit2 className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => onDelete(category.id)}>
+          <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => onDelete(category.id)} aria-label={`删除 ${category.name}`}>
             <Trash2 className="h-4 w-4" />
           </Button>
         </div>
@@ -175,10 +175,10 @@ const CategoryItem: React.FC<{
             <div key={child.id} className="flex items-center justify-between p-3 pl-10 hover:bg-gray-100 border-b border-gray-100 last:border-0">
               <span className="text-sm text-gray-700">{child.name}</span>
               <div className="flex space-x-1">
-                <Button variant="ghost" size="sm" onClick={() => onEdit(child)}>
+                <Button variant="ghost" size="sm" onClick={() => onEdit(child)} aria-label={`编辑 ${child.name}`}>
                   <Edit2 className="h-3 w-3" />
                 </Button>
-                <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => onDelete(child.id)}>
+                <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => onDelete(child.id)} aria-label={`删除 ${child.name}`}>
                   <Trash2 className="h-3 w-3" />
                 </Button>
               </div>

@@ -9,11 +9,12 @@ import { Save, Loader2 } from 'lucide-react';
 import { useI18n } from '../i18n';
 import { getDefaultTemplates } from '../utils/promptTemplates';
 import { checkHealth } from '../utils/aiClient';
+import { ThemePicker } from '../components/ui/ThemePicker';
 import { AICallLog, readRecentLogs } from '../utils/aiLogs';
 
 export const StoragePage: React.FC = () => {
   const { settings, dispatch, syncError } = useAppContext();
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const [aiChecking, setAiChecking] = useState(false);
   const [aiStatus, setAiStatus] = useState<'idle' | 'ok' | 'fail'>('idle');
   const [aiStatusMessage, setAiStatusMessage] = useState('');
@@ -82,6 +83,8 @@ export const StoragePage: React.FC = () => {
         </div>
       )}
       {syncError && <div className="p-4 rounded-md bg-amber-50 text-amber-800">云端保存暂时失败，页面已重新同步：{syncError}</div>}
+
+      <section className="pa-theme-section"><h2>{language === 'zh' ? '外观主题' : 'Appearance'}</h2><p>{language === 'zh' ? '选择舒服的颜色。主题只保存在当前浏览器，切换不会影响账本或未保存的内容。' : 'Choose a palette. Saved in this browser, without changing your ledger or unsaved edits.'}</p><ThemePicker variant="cards" language={language} /></section>
 
       <form onSubmit={handleSaveSettings}>
         <Card>

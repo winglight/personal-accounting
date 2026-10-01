@@ -1,77 +1,38 @@
-import React from 'react';
 import { useAppContext } from '../../contexts/AppContext';
 import { format, isSameDay, parseISO } from 'date-fns';
-import { Trash2 } from 'lucide-react';
+import { ArrowRightLeft, Trash2 } from 'lucide-react';
 import { useI18n } from '../../i18n';
+import { totalsByCurrency } from '../../utils/ledgerPresentation';
 
-export const TodayRecords: React.FC = () => {
+export function TodayRecords() {
   const { transactions, categories, accounts, dispatch } = useAppContext();
-  const { t: i18n } = useI18n();
-  const today = new Date();
-  
-  const todayTransactions = transactions.filter(t => 
-    isSameDay(parseISO(t.date), today)
-  ).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
-  const income = todayTransactions
-    .filter(t => t.type === 'income')
-    .reduce((sum, t) => sum + t.amount, 0);
-    
-  const expense = todayTransactions
-    .filter(t => t.type === 'expense')
-    .reduce((sum, t) => sum + t.amount, 0);
-
-  const handleDelete = (id: string) => {
-    if (confirm(i18n('today.deleteConfirm'))) {
-      dispatch({ type: 'DELETE_TRANSACTION', payload: id });
-    }
-  };
-
-  const getCategoryName = (id: string) => categories.find(c => c.id === id)?.name || 'Unknown';
-  const getAccountName = (id: string) => accounts.find(a => a.id === id)?.name || 'Unknown';
-
+  const { t, language } = useI18n();
+  const todayTransactions = transactions.filter(tx => isSameDay(parseISO(tx.date), new Date())).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const totals = totalsByCurrency(todayTransactions, accounts);
+  const getCategoryName = (id: string) => categories.find(c => c.id === id)?.name || t('common.none');
+  const getAccountName = (id?: string) => accounts.find(a => a.id === id)?.name || t('common.none');
+  const handleDelete = (id: string) => { if (confirm(t('today.deleteConfirm'))) dispatch({ type: 'DELETE_TRANSACTION', payload: id }); };
   return (
-    <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden h-full">
-      <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
-        <h3 className="font-semibold text-gray-700">{i18n('today.title')}</h3>
-        <div className="text-sm space-x-3">
-          <span className="text-green-600">{i18n('today.in')}: +{income.toFixed(2)}</span>
-          <span className="text-red-600">{i18n('today.out')}: -{expense.toFixed(2)}</span>
-        </div>
+    <section className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+      <div className="pa-today-head border-b border-gray-100 flex justify-between items-center">
+        <h2 className="font-semibold">{t('today.title')}<small className="ml-2 font-normal text-gray-500">{todayTransactions.length}</small></h2>
+        <div className="text-xs space-y-1">{totals.map(row => <div key={row.currency}><span className="text-gray-500 mr-2">{row.currency}</span><span className="pa-income mr-3">{t('today.in')}: +{row.income.toFixed(2)}</span><span className="pa-expense">{t('today.out')}: -{row.expense.toFixed(2)}</span></div>)}</div>
       </div>
-      
       <div className="divide-y divide-gray-100 overflow-y-auto max-h-[500px]">
-        {todayTransactions.length === 0 ? (
-          <div className="p-8 text-center text-gray-400 text-sm">{i18n('today.empty')}</div>
-        ) : (
-          todayTransactions.map(t => (
-            <div key={t.id} className="p-4 flex justify-between items-center hover:bg-gray-50 group">
-              <div className="flex-1">
-                <div className="flex items-center space-x-2">
-                  <span className="font-medium text-gray-900">{getCategoryName(t.categoryId)}</span>
-                  <span className="text-gray-400 mx-1">/</span>
-                    <span className="text-gray-600">{t.subcategoryId ? getCategoryName(t.subcategoryId) : i18n('common.none')}</span>
-                  {t.note && <span className="text-xs text-gray-500 truncate max-w-[150px]">- {t.note}</span>}
-                </div>
-                <div className="text-xs text-gray-400 mt-1">
-                  {getAccountName(t.accountId)} • {format(parseISO(t.createdAt), 'HH:mm')}
-                </div>
-              </div>
-              <div className="flex items-center space-x-4">
-                <span className={`font-semibold ${t.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
-                  {t.type === 'income' ? '+' : '-'}{t.amount.toFixed(2)}
-                </span>
-                <button 
-                  onClick={() => handleDelete(t.id)}
-                  className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </div>
+        {todayTransactions.length === 0 ? <div className="p-8 text-center text-gray-400 text-sm">{t('today.empty')}</div> : todayTransactions.map(tx => (
+          <div key={tx.id} className="pa-today-row flex justify-between items-center hover:bg-gray-50">
+            <div className="min-w-0 flex-1">
+              <div className="pa-record-title font-medium">{tx.type === 'transfer' ? <span className="inline-flex items-center gap-1"><ArrowRightLeft size={14} />{t('accounts.transfer')}</span> : <>{getCategoryName(tx.categoryId)}{tx.subcategoryId && <span className="text-gray-500"> / {getCategoryName(tx.subcategoryId)}</span>}</>}</div>
+              {tx.note && <div className="pa-record-meta truncate" title={tx.note}>{tx.note}</div>}
+              <div className="pa-record-meta">{getAccountName(tx.accountId)}{tx.type === 'transfer' && ` → ${getAccountName(tx.targetAccountId)}`} · {format(parseISO(tx.createdAt), 'HH:mm')}</div>
             </div>
-          ))
-        )}
+            <div className="pa-record-actions flex items-center gap-2">
+              <span className={`pa-record-amount pa-${tx.type}`}><small>{accounts.find(a => a.id === tx.accountId)?.currency || '—'} </small>{tx.type === 'income' ? '+' : tx.type === 'expense' ? '-' : ''}{tx.amount.toFixed(2)}</span>
+              <button type="button" onClick={() => handleDelete(tx.id)} className="pa-record-delete" aria-label={`${language === 'zh' ? '删除' : 'Delete'} ${tx.note || getCategoryName(tx.categoryId)}`}><Trash2 size={15} /></button>
+            </div>
+          </div>
+        ))}
       </div>
-    </div>
+    </section>
   );
-};
+}

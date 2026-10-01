@@ -153,7 +153,7 @@ export const RecordsPage: React.FC = () => {
         ) : (
           <div className="divide-y divide-gray-100">
             {filtered.slice(0, visibleCount).map((tx) => (
-              <div key={tx.id} className="p-4 flex justify-between items-center">
+              <div key={tx.id} className="pa-records-row p-4 flex justify-between items-center">
                 <div>
                   <div className="font-medium text-gray-900">
                     {getCategoryName(tx.categoryId)}
@@ -170,9 +170,9 @@ export const RecordsPage: React.FC = () => {
                     </div>
                   )}
                 </div>
-                <div className="flex items-center gap-3">
-                  <span className={`font-semibold ${tx.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
-                    {tx.type === 'income' ? '+' : '-'}{tx.amount.toFixed(2)}
+                <div className="pa-record-actions flex items-center gap-3">
+                  <span className={`font-semibold ${tx.type === 'income' ? 'pa-income' : 'pa-expense'}`}>
+                    <small className="text-xs font-normal">{accounts.find(account => account.id === tx.accountId)?.currency || '—'} </small>{tx.type === 'income' ? '+' : '-'}{tx.amount.toFixed(2)}
                   </span>
                   <Button variant="ghost" size="sm" onClick={() => openEdit(tx)}>
                     {t('common.edit')}

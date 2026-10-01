@@ -1,0 +1,250 @@
+/* Complete semantic palettes; forest is the default with or without JavaScript. */
+:root[data-theme="warm"]{
+  --ink:#302c26;
+  --muted:#6e655a;
+  --line:#ddd5c9;
+  --bg:#f4f1ea;
+  --paper:#fffdf9;
+  --surface:#eee8de;
+  --hover:#f0e8dc;
+  --input-border:#9a8c7b;
+  --accent:#885332;
+  --accent-hover:#714128;
+  --accent-soft:#f4e5d6;
+  --on-accent:#ffffff;
+  --focus:#87522f;
+  --expense:#a04a30;
+  --expense-soft:#f9e7df;
+  --income:#286c51;
+  --transfer:#706149;
+  --sidebar:#353029;
+  --sidebar-ink:#fff7ec;
+  --sidebar-muted:#c7baa6;
+  --sidebar-hover:#494137;
+  --sidebar-line:#655846;
+  --sidebar-active:#eac6a1;
+  --account:#504132;
+  --account-ink:#fff7eb;
+  --account-muted:#e0d0bb;
+  --tooltip:#352b23;
+  --tooltip-ink:#fff9f0;
+  --tooltip-link:#f1c58e;
+  --overlay:#201b1773;
+  --shadow-color:#352b231a;
+  --strong-shadow:#201b1740;
+  --chart-food:#a05231;
+  --chart-shop:#805475;
+  --chart-travel:#726026;
+  --chart-home:#3a7260;
+  --chart-fun:#a34764;
+  --chart-other:#71645a;
+  --chart-salary:#28704f;
+  --chart-side:#61732d;
+  --chart-grid:#d9d1c6;
+  --switch-off:#827465;
+  --color-scheme:light;
+}
+:root[data-theme="graphite"]{
+  --ink:#f2f0eb;
+  --muted:#bcb8b1;
+  --line:#494a4c;
+  --bg:#181a1d;
+  --paper:#24262a;
+  --surface:#303236;
+  --hover:#373638;
+  --input-border:#858481;
+  --accent:#dac29b;
+  --accent-hover:#ecd3ac;
+  --accent-soft:#40392f;
+  --on-accent:#262017;
+  --focus:#e5c99d;
+  --expense:#f0a184;
+  --expense-soft:#47332d;
+  --income:#79d1aa;
+  --transfer:#c3b598;
+  --sidebar:#101214;
+  --sidebar-ink:#f4eee3;
+  --sidebar-muted:#bab4a9;
+  --sidebar-hover:#2c2b28;
+  --sidebar-line:#575248;
+  --sidebar-active:#e5c99d;
+  --account:#39362f;
+  --account-ink:#fff6e6;
+  --account-muted:#d4c9b6;
+  --tooltip:#eee5d5;
+  --tooltip-ink:#29241d;
+  --tooltip-link:#74441f;
+  --overlay:#08090ab3;
+  --shadow-color:#00000030;
+  --strong-shadow:#00000066;
+  --chart-food:#eda886;
+  --chart-shop:#c9a0d2;
+  --chart-travel:#d7c073;
+  --chart-home:#84c6b3;
+  --chart-fun:#e697b7;
+  --chart-other:#c0b3a1;
+  --chart-salary:#83d9ac;
+  --chart-side:#bad38b;
+  --chart-grid:#484a4c;
+  --switch-off:#85817a;
+  --color-scheme:dark;
+}
+:root, :root, :root[data-theme="forest"]{
+  --ink:#24362b;
+  --muted:#5a6c5e;
+  --line:#d2ded0;
+  --bg:#eef3eb;
+  --paper:#fcfef9;
+  --surface:#e7eee2;
+  --hover:#e6efdf;
+  --input-border:#83977d;
+  --accent:#356747;
+  --accent-hover:#254f35;
+  --accent-soft:#e0ecdb;
+  --on-accent:#ffffff;
+  --focus:#326443;
+  --expense:#a04a30;
+  --expense-soft:#f9e7df;
+  --income:#267052;
+  --transfer:#596a42;
+  --sidebar:#213b2c;
+  --sidebar-ink:#f4fbec;
+  --sidebar-muted:#b6cbae;
+  --sidebar-hover:#35503b;
+  --sidebar-line:#597752;
+  --sidebar-active:#b7d49e;
+  --account:#314f38;
+  --account-ink:#f5fbe9;
+  --account-muted:#c6d8b9;
+  --tooltip:#253d2c;
+  --tooltip-ink:#f4fae9;
+  --tooltip-link:#bedd9f;
+  --overlay:#201b1773;
+  --shadow-color:#213b2c1a;
+  --strong-shadow:#201b1740;
+  --chart-food:#a05231;
+  --chart-shop:#805475;
+  --chart-travel:#726026;
+  --chart-home:#367358;
+  --chart-fun:#a34764;
+  --chart-other:#71645a;
+  --chart-salary:#28704f;
+  --chart-side:#5e7026;
+  --chart-grid:#ccd9c8;
+  --switch-off:#75846d;
+  --color-scheme:light;
+}
+:root[data-theme="amber"]{
+  --ink:#3c3020;
+  --muted:#786145;
+  --line:#e6d6b9;
+  --bg:#fbf3e2;
+  --paper:#fffdf6;
+  --surface:#f4ead4;
+  --hover:#f8ebcd;
+  --input-border:#a48b60;
+  --accent:#92540d;
+  --accent-hover:#774109;
+  --accent-soft:#f7e8c3;
+  --on-accent:#ffffff;
+  --focus:#8e510c;
+  --expense:#a04b24;
+  --expense-soft:#f9e7df;
+  --income:#3c6c3f;
+  --transfer:#756028;
+  --sidebar:#49351f;
+  --sidebar-ink:#fff5dd;
+  --sidebar-muted:#d8c29b;
+  --sidebar-hover:#614a2d;
+  --sidebar-line:#806740;
+  --sidebar-active:#f4d28d;
+  --account:#694c24;
+  --account-ink:#fff6dd;
+  --account-muted:#ead6af;
+  --tooltip:#4d371c;
+  --tooltip-ink:#fff6e2;
+  --tooltip-link:#f0ca7e;
+  --overlay:#201b1773;
+  --shadow-color:#593f201a;
+  --strong-shadow:#201b1740;
+  --chart-food:#a05231;
+  --chart-shop:#805475;
+  --chart-travel:#8a6514;
+  --chart-home:#3a7260;
+  --chart-fun:#a34764;
+  --chart-other:#71645a;
+  --chart-salary:#28704f;
+  --chart-side:#6a7328;
+  --chart-grid:#e4d5b8;
+  --switch-off:#98815a;
+  --color-scheme:light;
+}
+:root[data-theme="violet"]{
+  --ink:#3b3043;
+  --muted:#6e5c78;
+  --line:#e2d5e7;
+  --bg:#f5f0f7;
+  --paper:#fffcff;
+  --surface:#eee5f1;
+  --hover:#eee1f3;
+  --input-border:#a089aa;
+  --accent:#785391;
+  --accent-hover:#644378;
+  --accent-soft:#efe1f6;
+  --on-accent:#ffffff;
+  --focus:#79538d;
+  --expense:#a04a30;
+  --expense-soft:#f9e7df;
+  --income:#286e59;
+  --transfer:#705d7a;
+  --sidebar:#3d3048;
+  --sidebar-ink:#fcf2ff;
+  --sidebar-muted:#ceb6d8;
+  --sidebar-hover:#54405f;
+  --sidebar-line:#81678f;
+  --sidebar-active:#dbb9eb;
+  --account:#5b426b;
+  --account-ink:#fcf2ff;
+  --account-muted:#e0cbe9;
+  --tooltip:#493355;
+  --tooltip-ink:#fff4ff;
+  --tooltip-link:#e3b9f3;
+  --overlay:#201b1773;
+  --shadow-color:#4933551a;
+  --strong-shadow:#201b1740;
+  --chart-food:#a05231;
+  --chart-shop:#815391;
+  --chart-travel:#726026;
+  --chart-home:#3a7260;
+  --chart-fun:#a34764;
+  --chart-other:#7b667f;
+  --chart-salary:#28704f;
+  --chart-side:#61732d;
+  --chart-grid:#e0d2e6;
+  --switch-off:#937da1;
+  --color-scheme:light;
+}
+
+/* Theme controls are scoped so they do not change existing business forms. */
+.pa-theme-picker { color: var(--ink); min-width: 0; }
+.pa-theme-quick { display: flex; align-items: center; gap: .4rem; color: var(--muted); font-size: .75rem; }
+.pa-theme-quick > span { flex: none; }
+.pa-theme-quick select { min-height: 2.25rem; max-width: 8.5rem; border: 1px solid var(--input-border); border-radius: .55rem; background: var(--paper); color: var(--ink); padding: .35rem .4rem; font: inherit; cursor: pointer; }
+.pa-theme-fieldset { min-width: 0; border: 0; padding: 0; margin: 0; }
+.pa-theme-fieldset legend { padding: 0; font-size: .95rem; font-weight: 600; color: var(--ink); }
+.pa-theme-description { margin: .4rem 0 1rem; color: var(--muted); font-size: .8rem; line-height: 1.7; }
+.pa-theme-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 7rem), 1fr)); gap: .75rem; padding: .2rem; }
+.pa-theme-option { position: relative; min-width: 0; border: 1px solid var(--input-border); border-radius: .75rem; background: var(--paper); color: var(--ink); padding: .7rem; cursor: pointer; text-align: center; }
+.pa-theme-option:hover { background: var(--hover); }
+.pa-theme-option[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--accent); }
+.pa-theme-option strong { display: block; font-size: .85rem; font-weight: 500; margin: .5rem 0 .2rem; }
+.pa-theme-option small { display: block; color: var(--muted); font-size: .7rem; line-height: 1.5; }
+.pa-theme-preview { display: flex; height: 2.75rem; overflow: hidden; border-radius: .35rem; border: 1px solid var(--input-border); }
+.pa-theme-preview-sidebar { width: 24%; flex: none; }
+.pa-theme-preview-accent { flex: 1; border-radius: .2rem; margin: .6rem .5rem; }
+.pa-theme-selection-mark { position: absolute; top: .1rem; right: .1rem; display: grid; place-items: center; border-radius: 50%; background: var(--paper); color: var(--ink); width: 1.2rem; height: 1.2rem; font-size: .8rem; }
+.pa-theme-selection-mark:empty { visibility: hidden; }
+.pa-theme-picker select:focus-visible, .pa-theme-picker button:focus-visible { outline: 3px solid var(--focus); outline-offset: 4px; }
+.pa-theme-status { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+@media (max-width: 370px) { .pa-theme-quick > span { display: none; } .pa-theme-quick select { max-width: 7.5rem; } }
+@media (prefers-reduced-motion: reduce) { .pa-theme-picker *, .pa-theme-picker *::before, .pa-theme-picker *::after { transition: none !important; animation: none !important; } }

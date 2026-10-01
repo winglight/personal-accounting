@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import logo from '../assets/logo.svg';
+import { BookOpen } from 'lucide-react';
+import { ThemePicker } from '../components/ui/ThemePicker';
 import { Button } from '../components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
@@ -21,10 +22,10 @@ export const AuthPage: React.FC = () => {
     } finally { setBusy(false); }
   };
   return (
-    <main className="min-h-screen bg-gray-50 grid place-items-center p-4">
+    <main className="pa-auth"><section className="pa-auth-art"><div className="pa-brand"><span className="pa-brand-icon"><BookOpen size={24} /></span><div><strong>AI随手记</strong><small>PERSONAL ACCOUNTING</small></div></div><h1>生活的每一笔，<br />都值得好好记录</h1><p>用清晰的账本安放日常。手工记录、AI 文本与小票识别，让记账成为轻松的小习惯。</p></section><section className="pa-auth-content"><ThemePicker />
       <Card className="w-full max-w-md">
         <CardHeader>
-          <div className="flex items-center gap-3 mb-3"><img src={logo} className="h-11 w-11 rounded-lg" alt="" /><CardTitle>个人记账</CardTitle></div>
+          <div className="flex items-center gap-3 mb-3"><span className="pa-brand-icon"><BookOpen size={23} /></span><CardTitle>个人记账</CardTitle></div>
           <div className="grid grid-cols-2 rounded-lg bg-gray-100 p-1 text-sm">
             <button type="button" className={`rounded-md py-2 ${mode === 'signin' ? 'bg-white shadow-sm font-medium' : ''}`} onClick={() => setMode('signin')}>登录</button>
             <button type="button" className={`rounded-md py-2 ${mode === 'signup' ? 'bg-white shadow-sm font-medium' : ''}`} onClick={() => setMode('signup')}>注册</button>
@@ -40,6 +41,6 @@ export const AuthPage: React.FC = () => {
           </form>
         </CardContent>
       </Card>
-    </main>
+    </section></main>
   );
 };
