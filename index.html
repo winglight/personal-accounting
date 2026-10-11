@@ -35,7 +35,8 @@
         import.meta.hot.on('vite:error', (error) => {
           if (error.err) {
             console.error(
-              [error.err.message, error.err.frame].filter(Boolean).join('\n'),
+              [error.err.message, error.err.frame].filter(Boolean).join('
+'),
             )
           }
         })
@@ -45,5 +46,6 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+  <a href="https://broyustudio.com/" target="_blank" rel="noopener" title="broyustudio.com" aria-label="broyustudio.com" style="position:fixed;bottom:24px;right:24px;z-index:9999;width:52px;height:52px;border-radius:50%;background:#246443;display:flex;align-items:center;justify-content:center;box-shadow:0 10px 30px rgba(26,59,37,.25);transition:background .2s,transform .2s;" onmouseover="this.style.background='#17482e';this.style.transform='translateY(-2px)'" onmouseout="this.style.background='#246443';this.style.transform='none'"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M9 21v-6h6v6"/></svg></a>
   </body>
 </html>
